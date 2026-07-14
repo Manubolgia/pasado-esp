@@ -1,17 +1,23 @@
 # Pasado
 
-Entrenador minimalista del pasado en español (pretérito e imperfecto).
-PWA instalable en iPhone, sin dependencias, funciona offline.
+Entrenador minimalista de todo el sistema del pasado en español: pretérito
+indefinido, imperfecto, perfecto, pluscuamperfecto e imperfecto de subjuntivo
+(-ra y -se). PWA instalable en iPhone, sin dependencias, funciona offline.
 
 ## Modos
 
-- **Conjugar** — escribe la forma pedida (verbo × tiempo × persona). Repetición
-  espaciada tipo Leitner: los fallos vuelven enseguida, los aciertos se espacian
-  (1 min → 10 min → 1 d → 3 d → 7 d → 16 d → 35 d).
-- **Elegir** — frase con hueco: primero decide pretérito o imperfecto según el
-  contexto, después escribe la forma. Cada frase explica la pista de uso.
-- **Tablas** — terminaciones, pretéritos fuertes, cambios vocálicos, reglas de
-  uso y verbos que cambian de significado.
+- **Conjugar** — escribe la forma pedida (verbo × tiempo × persona), con
+  filtros por tiempo. Repetición espaciada tipo Leitner: los fallos vuelven
+  enseguida, los aciertos se espacian (1 min → 10 min → 1 d → 3 d → 7 d →
+  16 d → 35 d). Los errores se diagnostican: tilde que falta, raíz fuerte,
+  participio irregular, auxiliar equivocado, persona o tiempo confundidos,
+  y siempre se explica cómo se construye la forma.
+- **Elegir** — frase con hueco: primero decide entre los cinco tiempos según
+  el contexto, después escribe la forma. Cada frase explica la pista de uso
+  (marcadores, pasado del pasado, como si + subjuntivo…).
+- **Tablas** — terminaciones simples y compuestas, pretéritos fuertes,
+  participios irregulares, formación del subjuntivo, cambios vocálicos,
+  reglas de uso y verbos que cambian de significado.
 
 El progreso se guarda en `localStorage` del dispositivo.
 
