@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Pasado</title>
+<meta name="description" content="Entrenador del pasado en español: pretérito e imperfecto.">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Pasado">
+<meta name="theme-color" content="#f6f2e9">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>Pasado</h1>
+  <button id="themeBtn" aria-label="Cambiar tema">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
+      <circle cx="12" cy="12" r="5"/>
+      <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/>
+    </svg>
+  </button>
+</header>
+
+<nav>
+  <button data-tab="conj" class="active">Conjugar</button>
+  <button data-tab="elegir">Elegir</button>
+  <button data-tab="ref">Tablas</button>
+</nav>
+
+<main>
+  <section id="tab-conj" class="tab">
+    <p class="meta" id="conjMeta"></p>
+    <div class="card">
+      <p class="tense" id="conjTense"></p>
+      <p class="prompt"><span id="conjPerson"></span> <strong id="conjVerb"></strong></p>
+      <p class="gloss" id="conjGloss"></p>
+      <div class="answer">
+        <input id="conjInput" type="text" lang="es" autocapitalize="none" autocorrect="off" autocomplete="off" spellcheck="false" enterkeyhint="done" placeholder="escribe la forma">
+        <button id="conjSubmit" aria-label="comprobar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 12h15M13 6l6 6-6 6"/></svg></button>
+      </div>
+      <div class="feedback" id="conjFeedback" hidden></div>
+      <button class="continue" id="conjNext" hidden>continuar</button>
+    </div>
+  </section>
+
+  <section id="tab-elegir" class="tab" hidden>
+    <p class="meta" id="sentMeta"></p>
+    <div class="card">
+      <p class="sentence" id="sentText"></p>
+      <p class="gloss" id="sentHint"></p>
+      <div class="choice" id="sentChoice">
+        <button data-t="pret">pretérito</button>
+        <button data-t="imp">imperfecto</button>
+      </div>
+      <div class="answer" id="sentAnswer" hidden>
+        <input id="sentInput" type="text" lang="es" autocapitalize="none" autocorrect="off" autocomplete="off" spellcheck="false" enterkeyhint="done" placeholder="escribe la forma">
+        <button id="sentSubmit" aria-label="comprobar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 12h15M13 6l6 6-6 6"/></svg></button>
+      </div>
+      <div class="feedback" id="sentFeedback" hidden></div>
+      <button class="continue" id="sentNext" hidden>continuar</button>
+    </div>
+  </section>
+
+  <section id="tab-ref" class="tab" hidden>
+    <div id="refContent"></div>
+  </section>
+</main>
+
+<div class="accents" id="accentBar">
+  <button>á</button><button>é</button><button>í</button><button>ó</button><button>ú</button><button>ñ</button>
+</div>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
