@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <title>Pasado</title>
-<meta name="description" content="Entrenador del pasado en español: pretérito e imperfecto.">
+<meta name="description" content="Entrenador del pasado en español: indefinido, imperfecto, perfecto, pluscuamperfecto y subjuntivo.">
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -35,6 +35,7 @@
 <main>
   <section id="tab-conj" class="tab">
     <p class="meta" id="conjMeta"></p>
+    <div class="chips" id="tenseChips"></div>
     <div class="card">
       <p class="tense" id="conjTense"></p>
       <p class="prompt"><span id="conjPerson"></span> <strong id="conjVerb"></strong></p>
@@ -54,8 +55,11 @@
       <p class="sentence" id="sentText"></p>
       <p class="gloss" id="sentHint"></p>
       <div class="choice" id="sentChoice">
-        <button data-t="pret">pretérito</button>
+        <button data-t="pret">indefinido</button>
         <button data-t="imp">imperfecto</button>
+        <button data-t="perf">perfecto</button>
+        <button data-t="plusc">pluscuamperfecto</button>
+        <button data-t="subj">subjuntivo</button>
       </div>
       <div class="answer" id="sentAnswer" hidden>
         <input id="sentInput" type="text" lang="es" autocapitalize="none" autocorrect="off" autocomplete="off" spellcheck="false" enterkeyhint="done" placeholder="escribe la forma">

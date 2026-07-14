@@ -2,13 +2,27 @@
 
 const $ = (id) => document.getElementById(id);
 const VMAP = Object.fromEntries(VERBS.map((v) => [v.inf, v]));
-const TENSE_NAME = { pret: "pretérito", imp: "imperfecto" };
+const TENSE_NAME = {
+  pret: "pretérito indefinido",
+  imp: "pretérito imperfecto",
+  perf: "pretérito perfecto",
+  plusc: "pluscuamperfecto",
+  subj: "imperfecto de subjuntivo",
+};
+const TENSE_SHORT = {
+  pret: "indefinido",
+  imp: "imperfecto",
+  perf: "perfecto",
+  plusc: "pluscuamp.",
+  subj: "subjuntivo",
+};
 
 /* ---------- persistent state ---------- */
 
 const KEY = "pasado.v1";
-let S = { theme: null, conj: {}, sent: {} };
+let S = { theme: null, conj: {}, sent: {}, tsel: null };
 try { S = Object.assign(S, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch {}
+if (!S.tsel) S.tsel = Object.fromEntries(TENSES.map((t) => [t, true]));
 const save = () => localStorage.setItem(KEY, JSON.stringify(S));
 
 /* Leitner boxes: minutes until next review per box. Wrong answers drop to box 0. */
@@ -41,24 +55,90 @@ function pickItem(store, allKeys) {
 const deaccent = (s) => s.normalize("NFD").replace(/\u0301/g, "").normalize("NFC");
 const clean = (s) => s.trim().toLowerCase().replace(/\s+/g, " ");
 
+// every accepted spelling of a form (imperfect subjunctive has -ra and -se)
+function acceptedForms(v, tense, p) {
+  if (tense === "subj") return [subjunctive(v, p, false), subjunctive(v, p, true)];
+  return [conjugate(v, tense, p)];
+}
+
 function regularizedPret(v, p) {
   // what the form would be if the verb were fully regular (for targeted feedback)
   const stem = v.inf.slice(0, -2);
   return stem + (v.inf.endsWith("ar") ? PRET_AR : PRET_ERIR)[p];
 }
 
+// one-line explanation of how the correct form is built
+function explainForm(v, tense, p) {
+  const correct = conjugate(v, tense, p);
+  if (tense === "perf" || tense === "plusc") {
+    const [aux, part] = correct.split(" ");
+    return `${tense === "perf" ? "Presente" : "Imperfecto"} de haber («${aux}») + participio «${part}»${v.part ? " (irregular)" : ""}.`;
+  }
+  if (tense === "subj") {
+    return `3ª pl. del indefinido («${conjugate(v, "pret", 5)}») − ron + -ra/-se: «${correct}» o «${subjunctive(v, p, true)}».`;
+  }
+  if (tense === "imp") {
+    if (v.imp) return `Imperfecto irregular — solo ser (era), ir (iba) y ver (veía).`;
+    return `Imperfecto regular: raíz «${v.inf.slice(0, -2)}-» + «-${(v.inf.endsWith("ar") ? IMP_AR : IMP_ERIR)[p]}». Nunca falla: solo ser, ir y ver son irregulares.`;
+  }
+  if (v.pret) return `«${v.inf}» es totalmente irregular: ${[0, 1, 2, 3, 4, 5].map((q) => conjugate(v, "pret", q)).join(", ")}.`;
+  if (v.strong) return `Pretérito fuerte: raíz «${v.strong}-» + -e, -iste, -o, -imos, -isteis, ${v.strong.endsWith("j") ? "-eron" : "-ieron"} — sin tilde en yo/él.`;
+  if (v.stem3 && (p === 2 || p === 5)) return `Cambio vocálico solo en 3ª persona: raíz «${v.stem3}-» → «${correct}».`;
+  if ((v.y || v.uir) && (p === 2 || p === 5)) return `Entre vocales la i se convierte en y: «${correct}».`;
+  let orth = "";
+  if (p === 0) {
+    if (v.inf.endsWith("car")) orth = " (-car → -qué)";
+    else if (v.inf.endsWith("gar")) orth = " (-gar → -gué)";
+    else if (v.inf.endsWith("zar")) orth = " (-zar → -cé)";
+  }
+  return `Indefinido regular: raíz + «-${(v.inf.endsWith("ar") ? PRET_AR : v.y ? PRET_Y : v.uir ? PRET_UIR : PRET_ERIR)[p]}»${orth}.`;
+}
+
 function checkAnswer(v, tense, p, raw) {
   const input = clean(raw);
-  const correct = conjugate(v, tense, p);
-  if (input === correct) return { result: "ok" };
-  if (input && deaccent(input) === deaccent(correct))
-    return { result: "accent", msg: "Casi: falta la tilde.", correct };
-  const other = conjugate(v, tense === "pret" ? "imp" : "pret", p);
-  if (input === other)
-    return { result: "bad", msg: `Esa es la forma del ${TENSE_NAME[tense === "pret" ? "imp" : "pret"]}.`, correct };
-  if (tense === "pret" && input === regularizedPret(v, p) && input !== correct)
-    return { result: "bad", msg: `«${v.inf}» es irregular en el pretérito.`, correct };
-  return { result: "bad", correct };
+  const forms = acceptedForms(v, tense, p);
+  const correct = tense === "subj" ? `${forms[0]} / ${forms[1]}` : forms[0];
+  const why = explainForm(v, tense, p);
+
+  if (forms.includes(input)) {
+    const other = forms.find((f) => f !== input);
+    return { result: "ok", msg: other ? `También válida: «${other}».` : undefined };
+  }
+  if (input && forms.some((f) => deaccent(input) === deaccent(f)))
+    return { result: "accent", msg: "Casi: falta la tilde.", correct, why };
+
+  // same person, different tense
+  for (const t of TENSES)
+    if (t !== tense && acceptedForms(v, t, p).includes(input))
+      return { result: "bad", msg: `Esa es la forma del ${TENSE_NAME[t]}.`, correct, why };
+
+  // right tense, wrong person
+  for (let q = 0; q < 6; q++)
+    if (q !== p && acceptedForms(v, tense, q).includes(input))
+      return { result: "bad", msg: `Ese es «${PERSONS[q]}», pero pedía «${PERSONS[p]}».`, correct, why };
+
+  // compound tenses: diagnose auxiliary and participle separately
+  if (tense === "perf" || tense === "plusc") {
+    const [aux, part] = forms[0].split(" ");
+    const toks = input.split(" ");
+    if (toks.length === 1 && toks[0] === part)
+      return { result: "bad", msg: `Falta el auxiliar: «${forms[0]}».`, correct, why };
+    if (toks.length === 2) {
+      const msgs = [];
+      if (deaccent(toks[0]) !== deaccent(aux))
+        msgs.push(`El auxiliar de «${PERSONS[p]}» es «${aux}» (haber en ${tense === "perf" ? "presente" : "imperfecto"}).`);
+      if (toks[1] !== part)
+        msgs.push(v.part
+          ? `El participio de «${v.inf}» es irregular: «${part}».`
+          : `Participio regular: raíz + ${v.inf.endsWith("ar") ? "-ado" : "-ido"} → «${part}».`);
+      if (msgs.length) return { result: "bad", msg: msgs.join(" "), correct, why };
+    }
+  }
+
+  if (tense === "pret" && input === regularizedPret(v, p))
+    return { result: "bad", msg: `«${v.inf}» es irregular en el indefinido.`, correct, why };
+
+  return { result: "bad", correct, why };
 }
 
 function renderFeedback(el, check, extraHtml = "") {
@@ -68,6 +148,7 @@ function renderFeedback(el, check, extraHtml = "") {
     `<span class="verdict ${ok ? "ok" : "bad"}">${ok ? "Correcto" : accent ? "Casi" : "No"}</span>` +
     (ok ? "" : `<p class="correct-form">${check.correct}</p>`) +
     (check.msg ? `<p class="why">${check.msg}</p>` : "") +
+    (check.why ? `<p class="why">${check.why}</p>` : "") +
     extraHtml;
   el.hidden = false;
 }
@@ -75,9 +156,13 @@ function renderFeedback(el, check, extraHtml = "") {
 /* ---------- conjugation drill ---------- */
 
 const DRILL_VERBS = VERBS.filter((v) => v.drill !== false);
+// introduction order: simple tenses over all verbs first, then compound, then subjunctive
 const CONJ_KEYS = [];
-DRILL_VERBS.forEach((v) => { CONJ_KEYS.push(v.inf + "|pret", v.inf + "|imp"); });
+for (const block of [["pret", "imp"], ["perf", "plusc"], ["subj"]])
+  DRILL_VERBS.forEach((v) => block.forEach((t) => CONJ_KEYS.push(v.inf + "|" + t)));
 const PERSON_WEIGHTS = [3, 2, 3, 2, 1, 3];
+
+const activeConjKeys = () => CONJ_KEYS.filter((k) => S.tsel[k.split("|")[1]]);
 
 function weightedPerson() {
   const total = PERSON_WEIGHTS.reduce((a, b) => a + b, 0);
@@ -89,16 +174,34 @@ function weightedPerson() {
 let conjCur = null;
 
 function conjMeta() {
-  const due = CONJ_KEYS.filter((k) => S.conj[k] && S.conj[k].due <= now()).length;
-  const seen = CONJ_KEYS.filter((k) => S.conj[k]).length;
-  $("conjMeta").textContent = `${seen}/${CONJ_KEYS.length} formas vistas · ${due} para repasar`;
+  const keys = activeConjKeys();
+  const due = keys.filter((k) => S.conj[k] && S.conj[k].due <= now()).length;
+  const seen = keys.filter((k) => S.conj[k]).length;
+  $("conjMeta").textContent = `${seen}/${keys.length} formas vistas · ${due} para repasar`;
+}
+
+function renderChips() {
+  $("tenseChips").innerHTML = "";
+  for (const t of TENSES) {
+    const b = document.createElement("button");
+    b.textContent = TENSE_SHORT[t];
+    b.classList.toggle("on", !!S.tsel[t]);
+    b.addEventListener("click", () => {
+      if (S.tsel[t] && Object.values(S.tsel).filter(Boolean).length === 1) return;
+      S.tsel[t] = !S.tsel[t];
+      save();
+      renderChips();
+      if (!S.tsel[conjCur.tense]) conjNext(); else conjMeta();
+    });
+    $("tenseChips").appendChild(b);
+  }
 }
 
 function conjNext() {
-  const key = pickItem(S.conj, CONJ_KEYS);
+  const key = pickItem(S.conj, activeConjKeys());
   const [inf, tense] = key.split("|");
   conjCur = { key, v: VMAP[inf], tense, p: weightedPerson() };
-  $("conjTense").textContent = TENSE_NAME[tense];
+  $("conjTense").textContent = TENSE_NAME[tense] + (tense === "subj" ? " (-ra o -se)" : "");
   $("conjPerson").textContent = PERSONS[conjCur.p] + " ·";
   $("conjVerb").textContent = inf;
   $("conjGloss").textContent = conjCur.v.en;
@@ -124,7 +227,7 @@ function conjCheck() {
   $("conjNext").focus();
 }
 
-/* ---------- sentence mode (pretérito o imperfecto) ---------- */
+/* ---------- sentence mode (elige el tiempo) ---------- */
 
 const SENT_KEYS = SENTENCES.map((_, i) => String(i));
 let sentCur = null;
@@ -186,7 +289,7 @@ function sentCheck() {
     `<br><span class="cue-label">${cue.label}</span><p class="why">${cue.why}</p>`
   );
   const blank = $("sentBlank");
-  blank.textContent = check.correct || conjugate(sentCur.v, s.t, s.p);
+  blank.textContent = conjugate(sentCur.v, s.t, s.p);
   blank.classList.add("filled");
   $("sentInput").disabled = true;
   $("sentAnswer").hidden = true;
@@ -202,8 +305,22 @@ function buildReference() {
     `<table>${row(head, "th")}${rows.map((r) => row(r)).join("")}</table>`;
 
   const endings = table(
-    ["", "-ar pret.", "-er/-ir pret.", "-ar imp.", "-er/-ir imp."],
+    ["", "-ar indef.", "-er/-ir indef.", "-ar imp.", "-er/-ir imp."],
     PERSONS.map((p, i) => [p, PRET_AR[i], PRET_ERIR[i], IMP_AR[i], IMP_ERIR[i]])
+  );
+
+  const compound = table(
+    ["", "perfecto", "pluscuamperfecto"],
+    PERSONS.map((p, i) => [p, HABER_PRES[i] + " + part.", HABER_IMP[i] + " + part."])
+  );
+  const parts = VERBS.filter((v) => v.part)
+    .map((v) => `<b>${v.inf}</b> → ${v.part}`)
+    .join(", ");
+
+  const hablar = VMAP["hablar"], serV = VMAP["ser"];
+  const subjTable = table(
+    ["", "hablar", "ser / ir"],
+    PERSONS.map((p, i) => [p, `${subjunctive(hablar, i, false)} / ${subjunctive(hablar, i, true)}`, subjunctive(serV, i, false)])
   );
 
   const strongs = VERBS.filter((v) => v.strong)
@@ -227,7 +344,14 @@ function buildReference() {
     .join("");
 
   $("refContent").innerHTML = `
-    <h2>Terminaciones</h2>${endings}
+    <h2>Terminaciones simples</h2>${endings}
+    <h2>Perfecto y pluscuamperfecto</h2>
+    <p class="why">Haber conjugado + participio. Participio regular: -ar → -ado, -er/-ir → -ido.</p>
+    ${compound}
+    <p>Participios irregulares: ${parts}.</p>
+    <h2>Imperfecto de subjuntivo</h2>
+    <p class="why">3ª persona plural del indefinido − «ron» + -ra o -se (equivalentes): hablaron → hablara/hablase, dijeron → dijera, fueron → fuera. Nosotros lleva tilde: habláramos.</p>
+    ${subjTable}
     <h2>Pretéritos fuertes</h2>
     <p class="why">Raíz irregular + -e, -iste, -o, -imos, -isteis, -ieron (sin tilde; los en -j hacen -eron).</p>
     <ul>${strongs}</ul>
@@ -236,14 +360,15 @@ function buildReference() {
     <h2>i → y (solo 3ª persona)</h2><p>${yod}</p>
     <h2>Imperfecto irregular</h2>
     <p>Solo tres: <b>ser</b> (era…), <b>ir</b> (iba…), <b>ver</b> (veía…).</p>
-    <h2>¿Pretérito o imperfecto?</h2><ul>${cues}</ul>
+    <h2>¿Qué tiempo del pasado?</h2><ul>${cues}</ul>
     <h2>Verbos que cambian de significado</h2>
     <ul>
       <li><b>saber</b>: sabía = knew · supe = found out</li>
       <li><b>conocer</b>: conocía = knew · conocí = met</li>
       <li><b>querer</b>: quería = wanted · quise = tried · no quise = refused</li>
       <li><b>poder</b>: podía = was able · pude = managed to · no pude = failed to</li>
-    </ul>`;
+    </ul>
+    <p class="why">El pretérito anterior (hube hablado) es hoy literario y no se practica aquí.</p>`;
 }
 
 /* ---------- UI wiring ---------- */
@@ -297,6 +422,7 @@ document.querySelectorAll("#accentBar button").forEach((b) =>
 
 applyTheme();
 buildReference();
+renderChips();
 conjNext();
 sentNext();
 
