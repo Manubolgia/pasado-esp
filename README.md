@@ -13,10 +13,14 @@ por tiempo y repetición espaciada tipo Leitner: los fallos vuelven enseguida,
 los aciertos se espacian (1 min → 10 min → 1 d → 3 d → 7 d → 16 d → 35 d).
 
 - **Escribir** — frase con hueco: escribe la forma que pide el contexto.
-  Los errores se diagnostican: tilde que falta, raíz fuerte, participio
-  irregular, auxiliar equivocado, persona o tiempo confundidos, y siempre
-  se explica cómo se construye la forma y la pista de uso de la frase
-  (marcadores, pasado del pasado, como si + subjuntivo…).
+  Es flexible con la ortografía: la forma sin tilde («vivio», «he leido») se
+  da por buena, pero se recuerda la escritura correcta («vivió», «he leído»).
+  En el perfecto acepta también el indefinido, como es habitual en Galicia
+  («viví» por «he vivido»), señalando que la forma estándar es la compuesta.
+  Los demás errores se diagnostican: raíz fuerte, participio irregular,
+  auxiliar equivocado, persona o tiempo confundidos, y siempre se explica
+  cómo se construye la forma y la pista de uso de la frase (marcadores,
+  pasado del pasado, como si + subjuntivo…).
 - **Elegir** — la misma frase con hueco, pero eligiendo entre cuatro formas
   ya conjugadas del mismo verbo (la correcta y distractores de otros
   tiempos). Cada respuesta explica la pista de uso.

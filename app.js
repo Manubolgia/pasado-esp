@@ -33,7 +33,7 @@ const INTERVALS = [1, 10, 1440, 3 * 1440, 7 * 1440, 16 * 1440, 35 * 1440];
 const now = () => Date.now();
 
 function grade(rec, result) {
-  // result: "ok" | "accent" | "bad"
+  // result: "ok" | "bad"
   if (result === "ok") rec.box = Math.min(rec.box + 1, INTERVALS.length - 1);
   else if (result === "bad") rec.box = 0;
   rec.due = now() + INTERVALS[rec.box] * 60000;
@@ -110,13 +110,28 @@ function checkAnswer(v, tense, p, raw) {
   const forms = acceptedForms(v, tense, p);
   const correct = tense === "subj" ? `${forms[0]} / ${forms[1]}` : forms[0];
   const why = explainForm(v, tense, p);
+  // accents are optional: «vivio» is accepted, «vivió» is remarked as la correcta.
+  const missingAccent = (f) => input !== f && deaccent(input) === deaccent(f);
 
   if (forms.includes(input)) {
     const other = forms.find((f) => f !== input);
     return { result: "ok", msg: other ? `También válida: «${other}».` : undefined };
   }
-  if (input && forms.some((f) => deaccent(input) === deaccent(f)))
-    return { result: "accent", msg: "Casi: falta la tilde.", correct, why };
+  if (input && forms.some(missingAccent)) {
+    const target = forms.find(missingAccent);
+    return { result: "ok", accent: true, msg: `Con tilde es «${target}».` };
+  }
+
+  // In Galicia the indefinido routinely replaces the perfecto (viví por he vivido).
+  // Accept it as correct, but flag the compound as the standard form.
+  if (tense === "perf") {
+    const pret = conjugate(v, "pret", p);
+    if (input === pret || missingAccent(pret))
+      return {
+        result: "ok",
+        msg: `En Galicia se usa el indefinido, pero la forma estándar aquí es el perfecto «${forms[0]}».`,
+      };
+  }
 
   // same person, different tense
   for (const t of TENSES)
@@ -154,9 +169,8 @@ function checkAnswer(v, tense, p, raw) {
 
 function renderFeedback(el, check, extraHtml = "") {
   const ok = check.result === "ok";
-  const accent = check.result === "accent";
   el.innerHTML =
-    `<span class="verdict ${ok ? "ok" : "bad"}">${ok ? "Correcto" : accent ? "Casi" : "No"}</span>` +
+    `<span class="verdict ${ok ? "ok" : "bad"}">${ok ? "Correcto" : "No"}</span>` +
     (ok ? "" : `<p class="correct-form">${check.correct}</p>`) +
     (check.msg ? `<p class="why">${check.msg}</p>` : "") +
     (check.why ? `<p class="why">${check.why}</p>` : "") +
