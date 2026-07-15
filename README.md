@@ -6,15 +6,20 @@ indefinido, imperfecto, perfecto, pluscuamperfecto e imperfecto de subjuntivo
 
 ## Modos
 
-- **Conjugar** — escribe la forma pedida (verbo × tiempo × persona), con
-  filtros por tiempo. Repetición espaciada tipo Leitner: los fallos vuelven
-  enseguida, los aciertos se espacian (1 min → 10 min → 1 d → 3 d → 7 d →
-  16 d → 35 d). Los errores se diagnostican: tilde que falta, raíz fuerte,
-  participio irregular, auxiliar equivocado, persona o tiempo confundidos,
-  y siempre se explica cómo se construye la forma.
-- **Elegir** — frase con hueco: primero decide entre los cinco tiempos según
-  el contexto, después escribe la forma. Cada frase explica la pista de uso
+Los dos modos de práctica parten de lo mismo: una frase con hueco y el
+contexto suficiente para decidir qué forma del verbo encaja. Nada de nombrar
+tiempos verbales — se practica el uso, no la teoría. Ambos tienen filtros
+por tiempo y repetición espaciada tipo Leitner: los fallos vuelven enseguida,
+los aciertos se espacian (1 min → 10 min → 1 d → 3 d → 7 d → 16 d → 35 d).
+
+- **Escribir** — frase con hueco: escribe la forma que pide el contexto.
+  Los errores se diagnostican: tilde que falta, raíz fuerte, participio
+  irregular, auxiliar equivocado, persona o tiempo confundidos, y siempre
+  se explica cómo se construye la forma y la pista de uso de la frase
   (marcadores, pasado del pasado, como si + subjuntivo…).
+- **Elegir** — la misma frase con hueco, pero eligiendo entre cuatro formas
+  ya conjugadas del mismo verbo (la correcta y distractores de otros
+  tiempos). Cada respuesta explica la pista de uso.
 - **Tablas** — terminaciones simples y compuestas, pretéritos fuertes,
   participios irregulares, formación del subjuntivo, cambios vocálicos,
   reglas de uso y verbos que cambian de significado.

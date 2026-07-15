@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <title>Pasado</title>
-<meta name="description" content="Entrenador del pasado en español: indefinido, imperfecto, perfecto, pluscuamperfecto y subjuntivo.">
+<meta name="description" content="Entrenador del pasado en español: elige o escribe la forma que pide cada frase.">
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -27,46 +27,36 @@
 </header>
 
 <nav>
-  <button data-tab="conj" class="active">Conjugar</button>
-  <button data-tab="elegir">Elegir</button>
+  <button data-tab="esc" class="active">Escribir</button>
+  <button data-tab="eleg">Elegir</button>
   <button data-tab="ref">Tablas</button>
 </nav>
 
 <main>
-  <section id="tab-conj" class="tab">
-    <p class="meta" id="conjMeta"></p>
-    <div class="chips" id="tenseChips"></div>
+  <section id="tab-esc" class="tab">
+    <p class="meta" id="escMeta"></p>
+    <div class="chips" id="escChips"></div>
     <div class="card">
-      <p class="tense" id="conjTense"></p>
-      <p class="prompt"><span id="conjPerson"></span> <strong id="conjVerb"></strong></p>
-      <p class="gloss" id="conjGloss"></p>
+      <p class="sentence" id="escText"></p>
+      <p class="gloss" id="escHint"></p>
       <div class="answer">
-        <input id="conjInput" type="text" lang="es" autocapitalize="none" autocorrect="off" autocomplete="off" spellcheck="false" enterkeyhint="done" placeholder="escribe la forma">
-        <button id="conjSubmit" aria-label="comprobar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 12h15M13 6l6 6-6 6"/></svg></button>
+        <input id="escInput" type="text" lang="es" autocapitalize="none" autocorrect="off" autocomplete="off" spellcheck="false" enterkeyhint="done" placeholder="escribe la forma">
+        <button id="escSubmit" aria-label="comprobar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 12h15M13 6l6 6-6 6"/></svg></button>
       </div>
-      <div class="feedback" id="conjFeedback" hidden></div>
-      <button class="continue" id="conjNext" hidden>continuar</button>
+      <div class="feedback" id="escFeedback" hidden></div>
+      <button class="continue" id="escNext" hidden>continuar</button>
     </div>
   </section>
 
-  <section id="tab-elegir" class="tab" hidden>
-    <p class="meta" id="sentMeta"></p>
+  <section id="tab-eleg" class="tab" hidden>
+    <p class="meta" id="elegMeta"></p>
+    <div class="chips" id="elegChips"></div>
     <div class="card">
-      <p class="sentence" id="sentText"></p>
-      <p class="gloss" id="sentHint"></p>
-      <div class="choice" id="sentChoice">
-        <button data-t="pret">indefinido</button>
-        <button data-t="imp">imperfecto</button>
-        <button data-t="perf">perfecto</button>
-        <button data-t="plusc">pluscuamperfecto</button>
-        <button data-t="subj">subjuntivo</button>
-      </div>
-      <div class="answer" id="sentAnswer" hidden>
-        <input id="sentInput" type="text" lang="es" autocapitalize="none" autocorrect="off" autocomplete="off" spellcheck="false" enterkeyhint="done" placeholder="escribe la forma">
-        <button id="sentSubmit" aria-label="comprobar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 12h15M13 6l6 6-6 6"/></svg></button>
-      </div>
-      <div class="feedback" id="sentFeedback" hidden></div>
-      <button class="continue" id="sentNext" hidden>continuar</button>
+      <p class="sentence" id="elegText"></p>
+      <p class="gloss" id="elegHint"></p>
+      <div class="choice" id="elegChoice"></div>
+      <div class="feedback" id="elegFeedback" hidden></div>
+      <button class="continue" id="elegNext" hidden>continuar</button>
     </div>
   </section>
 

@@ -1,4 +1,4 @@
-/* Pasado — trainer logic: Leitner-style SRS over verb×tense items and sentences. */
+/* Pasado — trainer logic: Leitner-style SRS over sentences with a verb blank. */
 
 const $ = (id) => document.getElementById(id);
 const VMAP = Object.fromEntries(VERBS.map((v) => [v.inf, v]));
@@ -20,8 +20,11 @@ const TENSE_SHORT = {
 /* ---------- persistent state ---------- */
 
 const KEY = "pasado.v1";
-let S = { theme: null, conj: {}, sent: {}, tsel: null };
+let S = { theme: null, esc: {}, eleg: {}, tsel: null };
 try { S = Object.assign(S, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch {}
+// migrate from the old modes: sentence progress feeds the writing mode
+if (S.sent) { S.esc = S.sent; delete S.sent; }
+delete S.conj;
 if (!S.tsel) S.tsel = Object.fromEntries(TENSES.map((t) => [t, true]));
 const save = () => localStorage.setItem(KEY, JSON.stringify(S));
 
@@ -43,11 +46,19 @@ function pickItem(store, allKeys) {
     return due[Math.floor(Math.random() * Math.min(3, due.length))];
   }
   const fresh = allKeys.filter((k) => !store[k]);
-  if (fresh.length) return fresh[0];
+  if (fresh.length) return fresh[Math.floor(Math.random() * Math.min(5, fresh.length))];
   // nothing due: review the weakest items anyway
   const sorted = [...allKeys].sort((a, b) => store[a].box - store[b].box);
   const pool = sorted.slice(0, Math.max(5, Math.ceil(sorted.length / 4)));
   return pool[Math.floor(Math.random() * pool.length)];
+}
+
+function shuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
 }
 
 /* ---------- answer checking ---------- */
@@ -110,7 +121,7 @@ function checkAnswer(v, tense, p, raw) {
   // same person, different tense
   for (const t of TENSES)
     if (t !== tense && acceptedForms(v, t, p).includes(input))
-      return { result: "bad", msg: `Esa es la forma del ${TENSE_NAME[t]}.`, correct, why };
+      return { result: "bad", msg: `«${input}» existe, pero no es lo que pide este contexto.`, correct, why };
 
   // right tense, wrong person
   for (let q = 0; q < 6; q++)
@@ -136,7 +147,7 @@ function checkAnswer(v, tense, p, raw) {
   }
 
   if (tense === "pret" && input === regularizedPret(v, p))
-    return { result: "bad", msg: `«${v.inf}» es irregular en el indefinido.`, correct, why };
+    return { result: "bad", msg: `«${v.inf}» es irregular aquí.`, correct, why };
 
   return { result: "bad", correct, why };
 }
@@ -153,148 +164,155 @@ function renderFeedback(el, check, extraHtml = "") {
   el.hidden = false;
 }
 
-/* ---------- conjugation drill ---------- */
+/* ---------- sentence pool shared by both modes ---------- */
 
-const DRILL_VERBS = VERBS.filter((v) => v.drill !== false);
-// introduction order: simple tenses over all verbs first, then compound, then subjunctive
-const CONJ_KEYS = [];
-for (const block of [["pret", "imp"], ["perf", "plusc"], ["subj"]])
-  DRILL_VERBS.forEach((v) => block.forEach((t) => CONJ_KEYS.push(v.inf + "|" + t)));
-const PERSON_WEIGHTS = [3, 2, 3, 2, 1, 3];
+const SENT_KEYS = SENTENCES.map((_, i) => String(i));
+const activeKeys = () => SENT_KEYS.filter((k) => S.tsel[SENTENCES[Number(k)].t]);
 
-const activeConjKeys = () => CONJ_KEYS.filter((k) => S.tsel[k.split("|")[1]]);
+const sentenceHTML = (s) =>
+  `${s.b ? s.b + " " : ""}<span class="blank">&nbsp;</span> ${s.a}`;
 
-function weightedPerson() {
-  const total = PERSON_WEIGHTS.reduce((a, b) => a + b, 0);
-  let r = Math.random() * total;
-  for (let i = 0; i < 6; i++) { r -= PERSON_WEIGHTS[i]; if (r < 0) return i; }
-  return 0;
+const hintText = (s) => `(${s.v}${s.hint ? ", " + s.hint : ""})`;
+
+function cueHtml(s) {
+  const cue = CUES[s.c];
+  return `<br><span class="cue-label">${cue.label}</span><p class="why">${cue.why}</p>`;
 }
 
-let conjCur = null;
-
-function conjMeta() {
-  const keys = activeConjKeys();
-  const due = keys.filter((k) => S.conj[k] && S.conj[k].due <= now()).length;
-  const seen = keys.filter((k) => S.conj[k]).length;
-  $("conjMeta").textContent = `${seen}/${keys.length} formas vistas · ${due} para repasar`;
+function fillBlank(textEl, s) {
+  const blank = textEl.querySelector(".blank");
+  blank.textContent = conjugate(VMAP[s.v], s.t, s.p);
+  blank.classList.add("filled");
 }
 
+function metaLine(el, store) {
+  const keys = activeKeys();
+  const due = keys.filter((k) => store[k] && store[k].due <= now()).length;
+  const seen = keys.filter((k) => store[k]).length;
+  el.textContent = `${seen}/${keys.length} frases vistas · ${due} para repasar`;
+}
+
+/* tense filter chips, rendered identically in both practice tabs */
 function renderChips() {
-  $("tenseChips").innerHTML = "";
-  for (const t of TENSES) {
-    const b = document.createElement("button");
-    b.textContent = TENSE_SHORT[t];
-    b.classList.toggle("on", !!S.tsel[t]);
-    b.addEventListener("click", () => {
-      if (S.tsel[t] && Object.values(S.tsel).filter(Boolean).length === 1) return;
-      S.tsel[t] = !S.tsel[t];
-      save();
-      renderChips();
-      if (!S.tsel[conjCur.tense]) conjNext(); else conjMeta();
-    });
-    $("tenseChips").appendChild(b);
+  for (const id of ["escChips", "elegChips"]) {
+    $(id).innerHTML = "";
+    for (const t of TENSES) {
+      const b = document.createElement("button");
+      b.textContent = TENSE_SHORT[t];
+      b.classList.toggle("on", !!S.tsel[t]);
+      b.addEventListener("click", () => {
+        if (S.tsel[t] && Object.values(S.tsel).filter(Boolean).length === 1) return;
+        S.tsel[t] = !S.tsel[t];
+        save();
+        renderChips();
+        if (escCur && !S.tsel[escCur.s.t]) escNext(); else metaLine($("escMeta"), S.esc);
+        if (elegCur && !S.tsel[elegCur.s.t]) elegNext(); else metaLine($("elegMeta"), S.eleg);
+      });
+      $(id).appendChild(b);
+    }
   }
 }
 
-function conjNext() {
-  const key = pickItem(S.conj, activeConjKeys());
-  const [inf, tense] = key.split("|");
-  conjCur = { key, v: VMAP[inf], tense, p: weightedPerson() };
-  $("conjTense").textContent = TENSE_NAME[tense] + (tense === "subj" ? " (-ra o -se)" : "");
-  $("conjPerson").textContent = PERSONS[conjCur.p] + " ·";
-  $("conjVerb").textContent = inf;
-  $("conjGloss").textContent = conjCur.v.en;
-  $("conjInput").value = "";
-  $("conjInput").disabled = false;
-  $("conjFeedback").hidden = true;
-  $("conjNext").hidden = true;
-  conjMeta();
-  $("conjInput").focus();
+/* ---------- writing mode (escribe la forma) ---------- */
+
+let escCur = null;
+
+function escNext() {
+  const key = pickItem(S.esc, activeKeys());
+  const s = SENTENCES[Number(key)];
+  escCur = { key, s, v: VMAP[s.v] };
+  $("escText").innerHTML = sentenceHTML(s);
+  $("escHint").textContent = hintText(s);
+  $("escInput").value = "";
+  $("escInput").disabled = false;
+  $("escFeedback").hidden = true;
+  $("escNext").hidden = true;
+  metaLine($("escMeta"), S.esc);
+  if (activeTab === "esc") $("escInput").focus();
 }
 
-function conjCheck() {
-  if (!conjCur || !$("conjNext").hidden) return;
-  const raw = $("conjInput").value;
+function escCheck() {
+  if (!escCur || !$("escNext").hidden) return;
+  const raw = $("escInput").value;
   if (!clean(raw)) return;
-  const check = checkAnswer(conjCur.v, conjCur.tense, conjCur.p, raw);
-  const rec = S.conj[conjCur.key] || (S.conj[conjCur.key] = { box: 0, due: 0 });
+  const s = escCur.s;
+  const check = checkAnswer(escCur.v, s.t, s.p, raw);
+  const rec = S.esc[escCur.key] || (S.esc[escCur.key] = { box: 0, due: 0 });
   grade(rec, check.result);
   save();
-  renderFeedback($("conjFeedback"), check);
-  $("conjInput").disabled = true;
-  $("conjNext").hidden = false;
-  $("conjNext").focus();
+  renderFeedback($("escFeedback"), check, cueHtml(s));
+  fillBlank($("escText"), s);
+  $("escInput").disabled = true;
+  $("escNext").hidden = false;
+  $("escNext").focus();
 }
 
-/* ---------- sentence mode (elige el tiempo) ---------- */
+/* ---------- choice mode (elige la forma) ---------- */
 
-const SENT_KEYS = SENTENCES.map((_, i) => String(i));
-let sentCur = null;
+let elegCur = null;
 
-function sentMeta() {
-  const due = SENT_KEYS.filter((k) => S.sent[k] && S.sent[k].due <= now()).length;
-  const seen = SENT_KEYS.filter((k) => S.sent[k]).length;
-  $("sentMeta").textContent = `${seen}/${SENT_KEYS.length} frases vistas · ${due} para repasar`;
+// 4 conjugated forms of the sentence's verb: the right one, the same person in
+// other tenses (the real decision), and wrong persons as filler if forms collide
+function makeOptions(v, tense, p) {
+  const correct = conjugate(v, tense, p);
+  const used = new Set([correct]);
+  const opts = [{ f: correct, ok: true }];
+  for (const t of shuffle(TENSES.filter((x) => x !== tense))) {
+    if (opts.length === 4) break;
+    const f = conjugate(v, t, p);
+    if (!used.has(f)) { used.add(f); opts.push({ f, ok: false, t }); }
+  }
+  for (const q of shuffle([0, 1, 2, 3, 4, 5].filter((x) => x !== p))) {
+    if (opts.length === 4) break;
+    const f = conjugate(v, tense, q);
+    if (!used.has(f)) { used.add(f); opts.push({ f, ok: false, t: tense, p: q }); }
+  }
+  return shuffle(opts);
 }
 
-function sentNext() {
-  const key = pickItem(S.sent, SENT_KEYS);
+function elegNext() {
+  const key = pickItem(S.eleg, activeKeys());
   const s = SENTENCES[Number(key)];
-  sentCur = { key, s, v: VMAP[s.v], choseWrong: false };
-  const hint = s.hint ? `, ${s.hint}` : "";
-  $("sentText").innerHTML =
-    `${s.b ? s.b + " " : ""}<span class="blank" id="sentBlank">&nbsp;</span> ${s.a}`;
-  $("sentHint").textContent = `(${s.v}${hint})`;
-  $("sentChoice").hidden = false;
-  for (const b of $("sentChoice").children) b.disabled = false;
-  $("sentAnswer").hidden = true;
-  $("sentFeedback").hidden = true;
-  $("sentNext").hidden = true;
-  $("sentInput").value = "";
-  $("sentInput").disabled = false;
-  sentMeta();
+  elegCur = { key, s, v: VMAP[s.v], opts: makeOptions(VMAP[s.v], s.t, s.p) };
+  $("elegText").innerHTML = sentenceHTML(s);
+  $("elegHint").textContent = hintText(s);
+  const box = $("elegChoice");
+  box.innerHTML = "";
+  elegCur.opts.forEach((o, i) => {
+    const b = document.createElement("button");
+    b.textContent = o.f;
+    b.addEventListener("click", () => elegChoose(i, b));
+    box.appendChild(b);
+  });
+  $("elegFeedback").hidden = true;
+  $("elegNext").hidden = true;
+  metaLine($("elegMeta"), S.eleg);
 }
 
-function sentChoose(t) {
-  if (!sentCur || !$("sentAnswer").hidden) return;
-  const s = sentCur.s;
-  const cue = CUES[s.c];
-  const right = t === s.t;
-  sentCur.choseWrong = !right;
-  const fb = $("sentFeedback");
-  fb.innerHTML =
-    `<span class="verdict ${right ? "ok" : "bad"}">${right ? "Sí" : "No"} — es ${TENSE_NAME[s.t]}</span>` +
-    `<br><span class="cue-label">${cue.label}</span>` +
-    `<p class="why">${cue.why}</p>`;
-  fb.hidden = false;
-  $("sentChoice").hidden = true;
-  $("sentAnswer").hidden = false;
-  $("sentInput").focus();
-}
-
-function sentCheck() {
-  if (!sentCur || !$("sentNext").hidden) return;
-  const raw = $("sentInput").value;
-  if (!clean(raw)) return;
-  const s = sentCur.s;
-  const check = checkAnswer(sentCur.v, s.t, s.p, raw);
-  const rec = S.sent[sentCur.key] || (S.sent[sentCur.key] = { box: 0, due: 0 });
-  grade(rec, sentCur.choseWrong ? "bad" : check.result);
+function elegChoose(i, btn) {
+  if (!elegCur || !$("elegNext").hidden) return;
+  const { s, v, opts } = elegCur;
+  const o = opts[i];
+  const buttons = [...$("elegChoice").children];
+  buttons.forEach((b) => { b.disabled = true; });
+  buttons[opts.findIndex((x) => x.ok)].classList.add("right");
+  if (!o.ok) btn.classList.add("wrong");
+  const rec = S.eleg[elegCur.key] || (S.eleg[elegCur.key] = { box: 0, due: 0 });
+  grade(rec, o.ok ? "ok" : "bad");
   save();
-  const cue = CUES[s.c];
+  let msg;
+  if (!o.ok)
+    msg = o.p !== undefined
+      ? `«${o.f}» es «${PERSONS[o.p]}», pero el sujeto es «${PERSONS[s.p]}».`
+      : `«${o.f}» no encaja en este contexto.`;
   renderFeedback(
-    $("sentFeedback"),
-    check,
-    `<br><span class="cue-label">${cue.label}</span><p class="why">${cue.why}</p>`
+    $("elegFeedback"),
+    { result: o.ok ? "ok" : "bad", correct: conjugate(v, s.t, s.p), msg },
+    cueHtml(s)
   );
-  const blank = $("sentBlank");
-  blank.textContent = conjugate(sentCur.v, s.t, s.p);
-  blank.classList.add("filled");
-  $("sentInput").disabled = true;
-  $("sentAnswer").hidden = true;
-  $("sentNext").hidden = false;
-  $("sentNext").focus();
+  fillBlank($("elegText"), s);
+  $("elegNext").hidden = false;
+  $("elegNext").focus();
 }
 
 /* ---------- reference tab ---------- */
@@ -385,33 +403,25 @@ $("themeBtn").addEventListener("click", () => {
   applyTheme();
 });
 
-let activeTab = "conj";
+let activeTab = "esc";
 document.querySelectorAll("nav button").forEach((b) =>
   b.addEventListener("click", () => {
     activeTab = b.dataset.tab;
     document.querySelectorAll("nav button").forEach((x) => x.classList.toggle("active", x === b));
-    for (const t of ["conj", "elegir", "ref"]) $("tab-" + t).hidden = t !== activeTab;
-    $("accentBar").hidden = activeTab === "ref";
+    for (const t of ["esc", "eleg", "ref"]) $("tab-" + t).hidden = t !== activeTab;
+    $("accentBar").hidden = activeTab !== "esc";
   })
 );
 
-$("conjSubmit").addEventListener("click", conjCheck);
-$("conjInput").addEventListener("keydown", (e) => { if (e.key === "Enter") conjCheck(); });
-$("conjNext").addEventListener("click", conjNext);
+$("escSubmit").addEventListener("click", escCheck);
+$("escInput").addEventListener("keydown", (e) => { if (e.key === "Enter") escCheck(); });
+$("escNext").addEventListener("click", escNext);
+$("elegNext").addEventListener("click", elegNext);
 
-for (const b of $("sentChoice").children)
-  b.addEventListener("click", () => sentChoose(b.dataset.t));
-$("sentSubmit").addEventListener("click", sentCheck);
-$("sentInput").addEventListener("keydown", (e) => { if (e.key === "Enter") sentCheck(); });
-$("sentNext").addEventListener("click", sentNext);
-
-let lastInput = null;
-for (const inp of [$("conjInput"), $("sentInput")])
-  inp.addEventListener("focus", () => { lastInput = inp; });
 document.querySelectorAll("#accentBar button").forEach((b) =>
   b.addEventListener("mousedown", (e) => {
     e.preventDefault();
-    const inp = lastInput || (activeTab === "conj" ? $("conjInput") : $("sentInput"));
+    const inp = $("escInput");
     if (inp.disabled) return;
     const start = inp.selectionStart ?? inp.value.length;
     inp.value = inp.value.slice(0, start) + b.textContent + inp.value.slice(inp.selectionEnd ?? start);
@@ -423,7 +433,7 @@ document.querySelectorAll("#accentBar button").forEach((b) =>
 applyTheme();
 buildReference();
 renderChips();
-conjNext();
-sentNext();
+escNext();
+elegNext();
 
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js");
