@@ -266,11 +266,17 @@ function escCheck() {
 let elegCur = null;
 
 // 4 conjugated forms of the sentence's verb: the right one, the same person in
-// other tenses (the real decision), and wrong persons as filler if forms collide
+// other tenses (the real decision), and wrong persons as filler if forms collide.
+// For a perfecto answer the indefinido is always offered and also accepted, as
+// in Galicia (galicia flag), with a remark that the compound is the standard.
 function makeOptions(v, tense, p) {
   const correct = conjugate(v, tense, p);
   const used = new Set([correct]);
   const opts = [{ f: correct, ok: true }];
+  if (tense === "perf") {
+    const f = conjugate(v, "pret", p);
+    if (!used.has(f)) { used.add(f); opts.push({ f, galicia: true }); }
+  }
   for (const t of shuffle(TENSES.filter((x) => x !== tense))) {
     if (opts.length === 4) break;
     const f = conjugate(v, t, p);
@@ -307,21 +313,25 @@ function elegChoose(i, btn) {
   if (!elegCur || !$("elegNext").hidden) return;
   const { s, v, opts } = elegCur;
   const o = opts[i];
+  const accepted = o.ok || o.galicia;
   const buttons = [...$("elegChoice").children];
   buttons.forEach((b) => { b.disabled = true; });
   buttons[opts.findIndex((x) => x.ok)].classList.add("right");
-  if (!o.ok) btn.classList.add("wrong");
+  if (o.galicia) btn.classList.add("right");
+  else if (!o.ok) btn.classList.add("wrong");
   const rec = S.eleg[elegCur.key] || (S.eleg[elegCur.key] = { box: 0, due: 0 });
-  grade(rec, o.ok ? "ok" : "bad");
+  grade(rec, accepted ? "ok" : "bad");
   save();
   let msg;
-  if (!o.ok)
+  if (o.galicia)
+    msg = `En Galicia se usa el indefinido, pero la forma estándar aquí es el perfecto «${conjugate(v, s.t, s.p)}».`;
+  else if (!o.ok)
     msg = o.p !== undefined
       ? `«${o.f}» es «${PERSONS[o.p]}», pero el sujeto es «${PERSONS[s.p]}».`
       : `«${o.f}» no encaja en este contexto.`;
   renderFeedback(
     $("elegFeedback"),
-    { result: o.ok ? "ok" : "bad", correct: conjugate(v, s.t, s.p), msg },
+    { result: accepted ? "ok" : "bad", correct: conjugate(v, s.t, s.p), msg },
     cueHtml(s)
   );
   fillBlank($("elegText"), s);
