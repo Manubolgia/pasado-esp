@@ -441,7 +441,7 @@ $("escInput").addEventListener("keydown", (e) => { if (e.key === "Enter") escChe
 $("escNext").addEventListener("click", escNext);
 $("elegNext").addEventListener("click", elegNext);
 
-document.querySelectorAll("#accentBar button").forEach((b) =>
+document.querySelectorAll("#accentBar button").forEach((b) => {
   // pointerdown, not click: preventDefault here keeps the input focused, so iOS
   // never dismisses the keyboard between taps.
   b.addEventListener("pointerdown", (e) => {
@@ -458,8 +458,11 @@ document.querySelectorAll("#accentBar button").forEach((b) =>
     b.classList.remove("flash");
     void b.offsetWidth;
     b.classList.add("flash");
-  })
-);
+  });
+  // drop the class once it has played: a leftover .flash replays itself whenever the
+  // tab is shown again, since display:none -> display restarts CSS animations
+  b.addEventListener("animationend", () => b.classList.remove("flash"));
+});
 
 applyTheme();
 buildReference();
