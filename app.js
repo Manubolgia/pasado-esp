@@ -470,4 +470,19 @@ renderChips();
 escNext();
 elegNext();
 
-if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js");
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw.js").then((reg) => {
+    reg.update();
+    // a worker that takes over mid-session left the page running the old assets
+    let reloading = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (reloading) return;
+      reloading = true;
+      location.reload();
+    });
+  });
+  // catch a new deploy when the app is reopened from the background
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) navigator.serviceWorker.getRegistration().then((reg) => reg && reg.update());
+  });
+}
