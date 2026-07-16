@@ -443,16 +443,34 @@ $("escNext").addEventListener("click", escNext);
 $("elegNext").addEventListener("click", elegNext);
 
 document.querySelectorAll("#accentBar button").forEach((b) =>
-  b.addEventListener("mousedown", (e) => {
+  // pointerdown, not click: preventDefault here keeps the input focused, so iOS
+  // never dismisses the keyboard and the bar never moves under the finger.
+  b.addEventListener("pointerdown", (e) => {
     e.preventDefault();
     const inp = $("escInput");
     if (inp.disabled) return;
     const start = inp.selectionStart ?? inp.value.length;
-    inp.value = inp.value.slice(0, start) + b.textContent + inp.value.slice(inp.selectionEnd ?? start);
+    const end = inp.selectionEnd ?? start;
+    inp.value = inp.value.slice(0, start) + b.textContent + inp.value.slice(end);
     inp.focus();
     inp.setSelectionRange(start + 1, start + 1);
   })
 );
+
+// iOS overlays the keyboard on the layout viewport instead of resizing it, so the
+// accent bar has to ride the visual viewport to stay above the keyboard.
+const accentBar = $("accentBar");
+const vv = window.visualViewport;
+if (vv) {
+  const trackKeyboard = () => {
+    const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+    accentBar.style.setProperty("--kb", kb + "px");
+    accentBar.classList.toggle("lifted", kb > 0);
+  };
+  vv.addEventListener("resize", trackKeyboard);
+  vv.addEventListener("scroll", trackKeyboard);
+  trackKeyboard();
+}
 
 applyTheme();
 buildReference();

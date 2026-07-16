@@ -25,7 +25,7 @@ body {
   font: 17px/1.5 -apple-system, "Helvetica Neue", system-ui, sans-serif;
   max-width: 26rem;
   margin: 0 auto;
-  padding: calc(env(safe-area-inset-top) + 1rem) 1.25rem calc(env(safe-area-inset-bottom) + 1rem);
+  padding: calc(env(safe-area-inset-top) + 1rem) 1.25rem calc(env(safe-area-inset-bottom) + 5rem);
   display: flex;
   flex-direction: column;
   -webkit-text-size-adjust: 100%;
@@ -164,11 +164,21 @@ main { flex: 1; }
 .continue { margin-top: 1.2rem; width: 100%; padding: 0.6rem 0; }
 
 .accents {
+  position: fixed;
+  left: 0;
+  right: 0;
+  /* --kb is the keyboard height, kept in sync with visualViewport in app.js */
+  bottom: var(--kb, 0px);
+  z-index: 10;
   display: flex;
   gap: 0.5rem;
   justify-content: center;
-  padding-top: 1.25rem;
+  background: var(--bg);
+  border-top: var(--line);
+  padding: 0.6rem 1.25rem calc(env(safe-area-inset-bottom) + 0.6rem);
 }
+/* the keyboard already lifts the bar clear of the home indicator */
+.accents.lifted { padding-bottom: 0.6rem; }
 .accents button {
   width: 2.4rem;
   padding: 0.35rem 0;
