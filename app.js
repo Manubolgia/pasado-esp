@@ -433,7 +433,6 @@ document.querySelectorAll("nav button").forEach((b) =>
     activeTab = b.dataset.tab;
     document.querySelectorAll("nav button").forEach((x) => x.classList.toggle("active", x === b));
     for (const t of ["esc", "eleg", "ref"]) $("tab-" + t).hidden = t !== activeTab;
-    $("accentBar").hidden = activeTab !== "esc";
   })
 );
 
@@ -444,7 +443,7 @@ $("elegNext").addEventListener("click", elegNext);
 
 document.querySelectorAll("#accentBar button").forEach((b) =>
   // pointerdown, not click: preventDefault here keeps the input focused, so iOS
-  // never dismisses the keyboard and the bar never moves under the finger.
+  // never dismisses the keyboard between taps.
   b.addEventListener("pointerdown", (e) => {
     e.preventDefault();
     const inp = $("escInput");
@@ -461,21 +460,6 @@ document.querySelectorAll("#accentBar button").forEach((b) =>
     b.classList.add("flash");
   })
 );
-
-// iOS overlays the keyboard on the layout viewport instead of resizing it, so the
-// accent bar has to ride the visual viewport to stay above the keyboard.
-const accentBar = $("accentBar");
-const vv = window.visualViewport;
-if (vv) {
-  const trackKeyboard = () => {
-    const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-    accentBar.style.setProperty("--kb", kb + "px");
-    accentBar.classList.toggle("lifted", kb > 0);
-  };
-  vv.addEventListener("resize", trackKeyboard);
-  vv.addEventListener("scroll", trackKeyboard);
-  trackKeyboard();
-}
 
 applyTheme();
 buildReference();

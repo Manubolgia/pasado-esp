@@ -17,7 +17,7 @@
 </head>
 <body>
 <header>
-  <h1>Pasado <span id="version">v6</span></h1>
+  <h1>Pasado <span id="version">v7</span></h1>
   <button id="themeBtn" aria-label="Cambiar tema">
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
       <circle cx="12" cy="12" r="5"/>
@@ -43,6 +43,9 @@
         <input id="escInput" type="text" lang="es" autocapitalize="none" autocorrect="off" autocomplete="off" spellcheck="false" enterkeyhint="done" placeholder="escribe la forma">
         <button id="escSubmit" aria-label="comprobar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 12h15M13 6l6 6-6 6"/></svg></button>
       </div>
+      <div class="accents" id="accentBar">
+        <button>á</button><button>é</button><button>í</button><button>ó</button><button>ú</button><button>ñ</button>
+      </div>
       <div class="feedback" id="escFeedback" hidden></div>
       <button class="continue" id="escNext" hidden>continuar</button>
     </div>
@@ -64,10 +67,6 @@
     <div id="refContent"></div>
   </section>
 </main>
-
-<div class="accents" id="accentBar">
-  <button>á</button><button>é</button><button>í</button><button>ó</button><button>ú</button><button>ñ</button>
-</div>
 
 <script src="data.js"></script>
 <script src="app.js"></script>
