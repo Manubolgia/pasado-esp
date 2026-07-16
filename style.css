@@ -56,6 +56,12 @@ h1 {
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
+#version {
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  color: var(--faint);
+  text-transform: none;
+}
 #themeBtn { border: none; padding: 0.25rem; line-height: 0; }
 #themeBtn:active { background: none; color: var(--ink); }
 
@@ -183,6 +189,15 @@ main { flex: 1; }
   width: 2.4rem;
   padding: 0.35rem 0;
   font-family: Georgia, serif;
+}
+/* --ink/--bg swap with the theme, so the flash is black-on-light and white-on-dark */
+@keyframes accent-flash {
+  0%, 55% { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  100% { background: none; color: var(--ink); border-color: var(--ink); }
+}
+.accents button.flash { animation: accent-flash 0.28s ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .accents button.flash { animation-duration: 0.01s; }
 }
 
 /* Reference tables */

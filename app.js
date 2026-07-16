@@ -454,6 +454,11 @@ document.querySelectorAll("#accentBar button").forEach((b) =>
     inp.value = inp.value.slice(0, start) + b.textContent + inp.value.slice(end);
     inp.focus();
     inp.setSelectionRange(start + 1, start + 1);
+
+    // restart the flash even when the same key is tapped twice in a row
+    b.classList.remove("flash");
+    void b.offsetWidth;
+    b.classList.add("flash");
   })
 );
 
