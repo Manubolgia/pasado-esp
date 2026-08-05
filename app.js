@@ -65,6 +65,8 @@ function shuffle(a) {
 
 const deaccent = (s) => s.normalize("NFD").replace(/\u0301/g, "").normalize("NFC");
 const clean = (s) => s.trim().toLowerCase().replace(/\s+/g, " ");
+// what the learner typed goes back into the feedback as HTML, so escape it
+const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 // every accepted spelling of a form (imperfect subjunctive has -ra and -se)
 function acceptedForms(v, tense, p) {
@@ -105,10 +107,24 @@ function explainForm(v, tense, p) {
   return `Indefinido regular: raíz + «-${(v.inf.endsWith("ar") ? PRET_AR : v.y ? PRET_Y : v.uir ? PRET_UIR : PRET_ERIR)[p]}»${orth}.`;
 }
 
+// the full verdict for one typed answer; `typed` echoes it back so a wrong answer
+// can be shown next to the correct form instead of just vanishing
 function checkAnswer(v, tense, p, raw) {
+  const check = diagnose(v, tense, p, raw);
+  if (check.result === "bad") check.typed = clean(raw);
+  return check;
+}
+
+// the answer the sentence is asking for, formatted for display
+function correctForm(v, tense, p) {
+  const forms = acceptedForms(v, tense, p);
+  return tense === "subj" ? `${forms[0]} / ${forms[1]}` : forms[0];
+}
+
+function diagnose(v, tense, p, raw) {
   const input = clean(raw);
   const forms = acceptedForms(v, tense, p);
-  const correct = tense === "subj" ? `${forms[0]} / ${forms[1]}` : forms[0];
+  const correct = correctForm(v, tense, p);
   const why = explainForm(v, tense, p);
   // accents are optional: «vivio» is accepted, «vivió» is remarked as la correcta.
   const missingAccent = (f) => input !== f && deaccent(input) === deaccent(f);
@@ -136,7 +152,7 @@ function checkAnswer(v, tense, p, raw) {
   // same person, different tense
   for (const t of TENSES)
     if (t !== tense && acceptedForms(v, t, p).includes(input))
-      return { result: "bad", msg: `«${input}» existe, pero no es lo que pide este contexto.`, correct, why };
+      return { result: "bad", msg: `«${esc(input)}» existe, pero no es lo que pide este contexto.`, correct, why };
 
   // right tense, wrong person
   for (let q = 0; q < 6; q++)
@@ -171,11 +187,39 @@ function renderFeedback(el, check, extraHtml = "") {
   const ok = check.result === "ok";
   el.innerHTML =
     `<span class="verdict ${ok ? "ok" : "bad"}">${ok ? "Correcto" : "No"}</span>` +
-    (ok ? "" : `<p class="correct-form">${check.correct}</p>`) +
+    (ok
+      ? ""
+      : (check.typed ? `<p class="typed">escribiste <s>${esc(check.typed)}</s></p>` : "") +
+        `<p class="correct-form">${check.correct}</p>`) +
     (check.msg ? `<p class="why">${check.msg}</p>` : "") +
     (check.why ? `<p class="why">${check.why}</p>` : "") +
     extraHtml;
   el.hidden = false;
+}
+
+/* The correct form lands below the input, which on a phone sits right at the
+   bottom of the visible area once the keyboard has been up. Pull it into view so
+   a wrong answer never scrolls past unseen. `nearest` scrolls the minimum needed,
+   and pins the top edge when the feedback is taller than the screen — so the
+   verdict and the correct form are what stays visible either way. */
+function showFeedback(el) {
+  requestAnimationFrame(() => el.scrollIntoView({ behavior: "smooth", block: "nearest" }));
+}
+
+/* «continuar» appears under the answer and takes focus so Enter moves on. That
+   leaves it exposed to the tail of the very keypress that submitted the answer:
+   a held Enter auto-repeats onto the fresh button, and an impatient second tap
+   lands on it too — either way the next sentence replaces the feedback before it
+   can be read. Swallow key repeats, and ignore activations in the first moments
+   after an answer is shown. (The single-press case is handled at the source, by
+   preventDefault on the input's Enter — see the keydown listener below.) */
+const CONTINUE_LOCK = 600;
+let continueArmed = 0;
+const armContinue = () => { continueArmed = now() + CONTINUE_LOCK; };
+
+function onContinue(btn, fn) {
+  btn.addEventListener("keydown", (e) => { if (e.repeat) e.preventDefault(); });
+  btn.addEventListener("click", () => { if (now() >= continueArmed) fn(); });
 }
 
 /* ---------- sentence pool shared by both modes ---------- */
@@ -230,6 +274,11 @@ function renderChips() {
 /* ---------- writing mode (escribe la forma) ---------- */
 
 let escCur = null;
+// The service worker can pair a cached index.html with a newer app.js while the
+// network is flaky, so this button may be missing. Never let that throw out of
+// escNext: a crash on boot leaves the learner staring at an empty exercise and
+// looking like their progress is gone, when it is only this control that is absent.
+const escRevealBtn = $("escReveal");
 
 function escNext() {
   const key = pickItem(S.esc, activeKeys());
@@ -241,6 +290,7 @@ function escNext() {
   $("escInput").disabled = false;
   $("escFeedback").hidden = true;
   $("escNext").hidden = true;
+  if (escRevealBtn) escRevealBtn.hidden = false;
   metaLine($("escMeta"), S.esc);
   if (activeTab === "esc") $("escInput").focus();
 }
@@ -249,16 +299,38 @@ function escCheck() {
   if (!escCur || !$("escNext").hidden) return;
   const raw = $("escInput").value;
   if (!clean(raw)) return;
+  escFinish(checkAnswer(escCur.v, escCur.s.t, escCur.s.p, raw));
+}
+
+// «no lo sé»: show the form rather than let a blind guess decide the answer is
+// unknowable. It counts as wrong, so the sentence comes back soon — but with the
+// answer already seen once.
+function escReveal() {
+  if (!escCur || !$("escNext").hidden) return;
+  const { v, s } = escCur;
+  escFinish({
+    result: "bad",
+    correct: correctForm(v, s.t, s.p),
+    why: explainForm(v, s.t, s.p),
+    msg: "Sin respuesta: mira la forma y la frase volverá pronto.",
+  });
+}
+
+function escFinish(check) {
   const s = escCur.s;
-  const check = checkAnswer(escCur.v, s.t, s.p, raw);
   const rec = S.esc[escCur.key] || (S.esc[escCur.key] = { box: 0, due: 0 });
   grade(rec, check.result);
   save();
   renderFeedback($("escFeedback"), check, cueHtml(s));
   fillBlank($("escText"), s);
   $("escInput").disabled = true;
+  if (escRevealBtn) escRevealBtn.hidden = true;
   $("escNext").hidden = false;
-  $("escNext").focus();
+  // focus without scrolling: the button sits below the feedback, and letting it
+  // scroll itself into view can push the correct form back off the top
+  $("escNext").focus({ preventScroll: true });
+  armContinue();
+  showFeedback($("escFeedback"));
 }
 
 /* ---------- choice mode (elige la forma) ---------- */
@@ -331,12 +403,14 @@ function elegChoose(i, btn) {
       : `«${o.f}» no encaja en este contexto.`;
   renderFeedback(
     $("elegFeedback"),
-    { result: accepted ? "ok" : "bad", correct: conjugate(v, s.t, s.p), msg },
+    { result: accepted ? "ok" : "bad", correct: correctForm(v, s.t, s.p), msg },
     cueHtml(s)
   );
   fillBlank($("elegText"), s);
   $("elegNext").hidden = false;
-  $("elegNext").focus();
+  $("elegNext").focus({ preventScroll: true });
+  armContinue();
+  showFeedback($("elegFeedback"));
 }
 
 /* ---------- reference tab ---------- */
@@ -437,9 +511,19 @@ document.querySelectorAll("nav button").forEach((b) =>
 );
 
 $("escSubmit").addEventListener("click", escCheck);
-$("escInput").addEventListener("keydown", (e) => { if (e.key === "Enter") escCheck(); });
-$("escNext").addEventListener("click", escNext);
-$("elegNext").addEventListener("click", elegNext);
+if (escRevealBtn) escRevealBtn.addEventListener("click", escReveal);
+// One Enter used to submit the answer AND skip past it. keydown ran escCheck,
+// which moved focus to «continuar»; the keypress of that same press then landed
+// on the freshly focused button and activated it, so the correct form was drawn
+// and wiped within a single keystroke — it never showed for a typed answer.
+// preventDefault on the keydown suppresses that keypress, so Enter only submits.
+$("escInput").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" || e.repeat) return;
+  e.preventDefault();
+  escCheck();
+});
+onContinue($("escNext"), escNext);
+onContinue($("elegNext"), elegNext);
 
 document.querySelectorAll("#accentBar button").forEach((b) => {
   // pointerdown, not click: preventDefault here keeps the input focused, so iOS
