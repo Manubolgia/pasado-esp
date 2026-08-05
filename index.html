@@ -17,7 +17,7 @@
 </head>
 <body>
 <header>
-  <h1>Pasado <span id="version">v9</span></h1>
+  <h1>Pasado <span id="version">v10</span></h1>
   <button id="themeBtn" aria-label="Cambiar tema">
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
       <circle cx="12" cy="12" r="5"/>
@@ -38,7 +38,10 @@
     <div class="chips" id="escChips"></div>
     <div class="card">
       <p class="sentence" id="escText"></p>
-      <p class="gloss" id="escHint"></p>
+      <div class="gloss-row">
+        <p class="gloss" id="escHint"></p>
+        <button class="reveal" id="escReveal">no lo sé</button>
+      </div>
       <div class="answer">
         <input id="escInput" type="text" lang="es" autocapitalize="none" autocorrect="off" autocomplete="off" spellcheck="false" enterkeyhint="done" placeholder="escribe la forma">
         <button id="escSubmit" aria-label="comprobar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 12h15M13 6l6 6-6 6"/></svg></button>
