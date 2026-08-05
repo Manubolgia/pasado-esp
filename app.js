@@ -274,6 +274,11 @@ function renderChips() {
 /* ---------- writing mode (escribe la forma) ---------- */
 
 let escCur = null;
+// The service worker can pair a cached index.html with a newer app.js while the
+// network is flaky, so this button may be missing. Never let that throw out of
+// escNext: a crash on boot leaves the learner staring at an empty exercise and
+// looking like their progress is gone, when it is only this control that is absent.
+const escRevealBtn = $("escReveal");
 
 function escNext() {
   const key = pickItem(S.esc, activeKeys());
@@ -285,7 +290,7 @@ function escNext() {
   $("escInput").disabled = false;
   $("escFeedback").hidden = true;
   $("escNext").hidden = true;
-  $("escReveal").hidden = false;
+  if (escRevealBtn) escRevealBtn.hidden = false;
   metaLine($("escMeta"), S.esc);
   if (activeTab === "esc") $("escInput").focus();
 }
@@ -319,7 +324,7 @@ function escFinish(check) {
   renderFeedback($("escFeedback"), check, cueHtml(s));
   fillBlank($("escText"), s);
   $("escInput").disabled = true;
-  $("escReveal").hidden = true;
+  if (escRevealBtn) escRevealBtn.hidden = true;
   $("escNext").hidden = false;
   // focus without scrolling: the button sits below the feedback, and letting it
   // scroll itself into view can push the correct form back off the top
@@ -506,7 +511,7 @@ document.querySelectorAll("nav button").forEach((b) =>
 );
 
 $("escSubmit").addEventListener("click", escCheck);
-$("escReveal").addEventListener("click", escReveal);
+if (escRevealBtn) escRevealBtn.addEventListener("click", escReveal);
 // One Enter used to submit the answer AND skip past it. keydown ran escCheck,
 // which moved focus to «continuar»; the keypress of that same press then landed
 // on the freshly focused button and activated it, so the correct form was drawn
