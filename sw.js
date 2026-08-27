@@ -1,4 +1,4 @@
-const CACHE = "pasado-v10";
+const CACHE = "pasado-v11";
 const ASSETS = [
   "./",
   "index.html",
