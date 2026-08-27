@@ -224,7 +224,11 @@ function onContinue(btn, fn) {
 
 /* ---------- sentence pool shared by both modes ---------- */
 
-const SENT_KEYS = SENTENCES.map((_, i) => String(i));
+/* Wherever the scheduler has no reason to prefer one sentence over another —
+   still-unseen items, ties in due date or in box — it walks this pool in order,
+   so a fixed order means every session opens with the same run of verbs.
+   Shuffle it once per app open. */
+const SENT_KEYS = shuffle(SENTENCES.map((_, i) => String(i)));
 const activeKeys = () => SENT_KEYS.filter((k) => S.tsel[SENTENCES[Number(k)].t]);
 
 const sentenceHTML = (s) =>
@@ -547,6 +551,12 @@ document.querySelectorAll("#accentBar button").forEach((b) => {
   // tab is shown again, since display:none -> display restarts CSS animations
   b.addEventListener("animationend", () => b.classList.remove("flash"));
 });
+
+// Added to the home screen the app is normally resumed, not reloaded, so a
+// shuffle at load alone would almost never run again. Reshuffle on the way back
+// in as well: it only affects which sentence comes next, never the current one.
+document.addEventListener("visibilitychange", () => { if (!document.hidden) shuffle(SENT_KEYS); });
+window.addEventListener("pageshow", (e) => { if (e.persisted) shuffle(SENT_KEYS); });
 
 applyTheme();
 buildReference();
