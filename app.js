@@ -256,7 +256,7 @@ function metaLine(el, store) {
 
 /* tense filter chips, rendered identically in both practice tabs */
 function renderChips() {
-  for (const id of ["escChips", "elegChips"]) {
+  for (const id of ["escChips", "elegChips", "chatChips"]) {
     $(id).innerHTML = "";
     for (const t of TENSES) {
       const b = document.createElement("button");
@@ -269,6 +269,7 @@ function renderChips() {
         renderChips();
         if (escCur && !S.tsel[escCur.s.t]) escNext(); else metaLine($("escMeta"), S.esc);
         if (elegCur && !S.tsel[elegCur.s.t]) elegNext(); else metaLine($("elegMeta"), S.eleg);
+        if (typeof Chat !== "undefined") Chat.onTenses();
       });
       $(id).appendChild(b);
     }
@@ -505,14 +506,18 @@ $("themeBtn").addEventListener("click", () => {
   applyTheme();
 });
 
-let activeTab = "esc";
-document.querySelectorAll("nav button").forEach((b) =>
-  b.addEventListener("click", () => {
-    activeTab = b.dataset.tab;
-    document.querySelectorAll("nav button").forEach((x) => x.classList.toggle("active", x === b));
-    for (const t of ["esc", "eleg", "ref"]) $("tab-" + t).hidden = t !== activeTab;
-  })
-);
+// the last tab is remembered, so the app reopens where she left it
+const TABS = ["esc", "eleg", "chat", "ref"];
+let activeTab = TABS.includes(S.tab) && $("tab-" + S.tab) ? S.tab : "esc";
+function showTab(tab) {
+  activeTab = tab;
+  S.tab = tab;
+  save();
+  document.querySelectorAll("nav button").forEach((x) => x.classList.toggle("active", x.dataset.tab === tab));
+  for (const t of TABS) if ($("tab-" + t)) $("tab-" + t).hidden = t !== tab;
+  if (tab === "chat" && typeof Chat !== "undefined") Chat.onShow();
+}
+document.querySelectorAll("nav button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
 
 $("escSubmit").addEventListener("click", escCheck);
 if (escRevealBtn) escRevealBtn.addEventListener("click", escReveal);
@@ -559,6 +564,7 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden) shuf
 window.addEventListener("pageshow", (e) => { if (e.persisted) shuffle(SENT_KEYS); });
 
 applyTheme();
+showTab(activeTab);
 buildReference();
 renderChips();
 escNext();
@@ -566,7 +572,7 @@ elegNext();
 
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
-    reg.update();
+    if (reg) reg.update();
     // a worker that takes over mid-session left the page running the old assets
     let reloading = false;
     navigator.serviceWorker.addEventListener("controllerchange", () => {

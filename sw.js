@@ -1,10 +1,15 @@
-const CACHE = "pasado-v11";
+const CACHE = "pasado-v12";
+// the vendored library is pinned by version, so it keeps its own cache across app updates
+const VENDOR = "pasado-vendor-0.2.85";
 const ASSETS = [
   "./",
   "index.html",
   "style.css",
   "data.js",
   "app.js",
+  "analyzer.js",
+  "chat-data.js",
+  "chat.js",
   "manifest.webmanifest",
   "icons/icon.svg",
   "icons/icon-192.png",
@@ -19,7 +24,9 @@ self.addEventListener("install", (e) => {
 self.addEventListener("activate", (e) => {
   e.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      // only our own old caches: WebLLM keeps the downloaded model in caches of
+      // its own («webllm/…»), and wiping those would mean downloading it again
+      .then((keys) => Promise.all(keys.filter((k) => k.startsWith("pasado-") && k !== CACHE && k !== VENDOR).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
@@ -35,6 +42,24 @@ self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET") return;
   const url = new URL(e.request.url);
   if (url.origin !== self.location.origin) return;
+
+  // vendor/ holds a pinned library (6 MB): cache-first, fetched once on first use
+  if (url.pathname.includes("/vendor/")) {
+    e.respondWith(
+      caches.match(e.request).then(
+        (hit) =>
+          hit ||
+          fetch(e.request).then((res) => {
+            if (res.ok) {
+              const copy = res.clone();
+              caches.open(VENDOR).then((c) => c.put(e.request, copy));
+            }
+            return res;
+          })
+      )
+    );
+    return;
+  }
 
   if (e.request.mode === "navigate" || isCode(url)) {
     e.respondWith(

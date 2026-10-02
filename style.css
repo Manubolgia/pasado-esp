@@ -239,3 +239,129 @@ main { flex: 1; }
 #refContent ul { list-style: none; }
 #refContent li { margin: 0.35rem 0; font-size: 0.92rem; }
 #refContent li b { font-weight: 600; }
+
+/* Chat («Charlar») */
+.faint { color: var(--faint); }
+.chat-bar {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+.chat-bar p { flex: 1; font-size: 0.9rem; }
+
+.settings { margin-bottom: 1.2rem; padding: 1.1rem; font-size: 0.9rem; }
+.settings h3 {
+  font-size: 0.78rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 600;
+  margin: 1.2rem 0 0.4rem;
+}
+.settings h3:first-child { margin-top: 0; }
+.opt {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+  margin: 0.6rem 0;
+  cursor: pointer;
+  line-height: 1.4;
+}
+.opt input { margin-top: 0.25rem; accent-color: var(--ink); flex: none; }
+.opt .faint { font-size: 0.82rem; }
+.row { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 0.9rem; }
+button.quiet { color: var(--faint); border-color: var(--faint); }
+#tab-chat .why { color: var(--faint); font-size: 0.85rem; margin-top: 0.5rem; }
+
+.chat-status {
+  border: var(--line);
+  padding: 0.8rem 1rem;
+  margin-bottom: 1.2rem;
+  font-size: 0.9rem;
+}
+.bar { height: 2px; background: var(--faint); margin-top: 0.5rem; opacity: 0.6; }
+.bar span { display: block; height: 100%; background: var(--ink); transition: width 0.3s; }
+
+.welcome p + p { margin-top: 0.7rem; }
+
+.chat-log {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding-bottom: 1.2rem;
+}
+.msg { max-width: 90%; }
+.msg.t { align-self: flex-start; display: flex; align-items: flex-start; }
+.msg.u { align-self: flex-end; }
+.msg .txt {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.08rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.msg.t .txt { border-left: var(--line); padding: 0.05rem 0 0.05rem 0.8rem; }
+.msg.u .txt { border: var(--line); padding: 0.5rem 0.8rem; }
+.msg.typing .txt::after { content: "…"; animation: typing 1s steps(2) infinite; }
+@keyframes typing { 50% { opacity: 0.2; } }
+
+.pv { text-decoration: underline; text-decoration-color: var(--faint); text-underline-offset: 3px; }
+.fx { text-decoration: underline wavy var(--bad); text-underline-offset: 4px; text-decoration-thickness: 1px; }
+.fx.soft { text-decoration-style: dotted; }
+
+.say { border: none; padding: 0.3rem 0 0 0.6rem; color: var(--faint); line-height: 0; flex: none; }
+.say:active { background: none; color: var(--ink); }
+
+.notes {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.3rem 0.8rem;
+  margin-top: 0.4rem;
+  font-size: 0.85rem;
+}
+.notes .more { display: contents; }
+.notes .more[hidden] { display: none !important; }
+.note { border: none; padding: 0; font-size: 0.85rem; color: var(--faint); text-align: right; }
+.note:active { background: none; color: var(--ink); }
+.note s { text-decoration-color: var(--bad); }
+.note b { color: var(--ok); font-family: Georgia, serif; font-weight: 400; font-size: 0.95rem; }
+.note .maybe { color: var(--faint); }
+.notes .why { flex-basis: 100%; text-align: right; font-size: 0.82rem; margin-top: 0; }
+.used {
+  flex-basis: 100%;
+  text-align: right;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.dot { border: none; padding: 0 0.2rem; color: var(--bad); font-size: 1.3rem; line-height: 1; }
+.dot:active { background: none; color: var(--bad); }
+
+.composer {
+  position: sticky;
+  bottom: 0;
+  background: var(--bg);
+  padding: 0.6rem 0 calc(env(safe-area-inset-bottom) + 0.4rem);
+  margin-bottom: calc(-1 * env(safe-area-inset-bottom));
+}
+.composer .answer { margin-top: 0; align-items: flex-end; }
+.composer textarea {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 1.05rem;
+  line-height: 1.4;
+  color: var(--ink);
+  background: none;
+  border: none;
+  border-bottom: var(--line);
+  border-radius: 0;
+  padding: 0.25rem 0.1rem;
+  outline: none;
+  resize: none;
+  max-height: 160px;
+}
+.composer textarea::placeholder { color: var(--faint); opacity: 0.7; }
+.composer .accents { margin-top: 0.6rem; }
