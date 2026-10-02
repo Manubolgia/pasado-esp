@@ -284,6 +284,17 @@ button.quiet { color: var(--faint); border-color: var(--faint); }
 
 .welcome p + p { margin-top: 0.7rem; }
 
+.store-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin: 0.6rem 0;
+  line-height: 1.4;
+}
+.store-row .faint { font-size: 0.82rem; }
+.store-row button { flex: none; font-size: 0.85rem; padding: 0.25rem 0.7rem; }
+
 .chat-log {
   display: flex;
   flex-direction: column;

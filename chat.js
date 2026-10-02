@@ -157,22 +157,121 @@ const Chat = (() => {
     return "No se pudo cargar el modelo (" + s.slice(0, 120) + ").";
   }
 
-  async function deleteModel(key) {
-    const m = modelByKey(key);
-    if (!m) return;
-    if (llm.engine && (llm.id === m.f16 || llm.id === m.f32)) {
+  /* ---------- storage ----------
+     WebLLM keeps each model's files in the browser's Cache Storage, which on
+     an iPhone lives in the app's own data and counts against the phone's
+     storage. What is on disk is read from the caches themselves, not from our
+     own bookkeeping, so models this app no longer offers (or downloads that
+     never finished) show up too and can be deleted. */
+  const MODEL_URL = /\/mlc-ai\/([^/]+)\/resolve\//;
+  const isModelCache = (name) => name.startsWith("webllm");
+
+  async function storedModels() {
+    const found = new Map(); // model id -> bytes
+    if (!window.caches) return found;
+    for (const name of await caches.keys()) {
+      if (!isModelCache(name)) continue;
+      const cache = await caches.open(name);
+      for (const req of await cache.keys()) {
+        const m = req.url.match(MODEL_URL);
+        if (!m) continue;
+        const res = await cache.match(req); // headers only; the body is not read
+        const len = Number(res && res.headers.get("content-length")) || 0;
+        found.set(m[1], (found.get(m[1]) || 0) + len);
+      }
+    }
+    return found;
+  }
+
+  async function unloadIf(ids) {
+    if (llm.engine && ids.includes(llm.id)) {
       try { await llm.engine.unload(); } catch {}
       Object.assign(llm, { state: "off", engine: null, id: null });
     }
+  }
+
+  // the selected model would download again on the next visit; fall back to the guided tutor
+  function forgetChoiceIfGone() {
+    const m = modelByKey(C.model);
+    if (m && !C.dl[m.f16] && !C.dl[m.f32]) C.model = "none";
+  }
+
+  async function deleteModelId(id) {
+    await unloadIf([id]);
     try {
       const webllm = await import("./vendor/web-llm.js");
-      for (const id of [m.f16, m.f32]) {
-        await webllm.deleteModelAllInfoInCache(id).catch(() => {});
-        delete C.dl[id];
-      }
+      await webllm.deleteModelAllInfoInCache(id); // weights, config and its compiled library
     } catch {}
-    if (C.model === key) C.model = "none";
+    // and anything left under that model's address, also for models this app no longer lists
+    if (window.caches)
+      for (const name of await caches.keys()) {
+        if (!isModelCache(name)) continue;
+        const cache = await caches.open(name);
+        for (const req of await cache.keys()) if (req.url.includes(`/mlc-ai/${id}/`)) await cache.delete(req);
+      }
+    delete C.dl[id];
+    forgetChoiceIfGone();
     save();
+  }
+
+  async function deleteAllModels() {
+    await unloadIf([llm.id]);
+    if (window.caches) for (const name of await caches.keys()) if (isModelCache(name)) await caches.delete(name);
+    C.dl = {};
+    forgetChoiceIfGone();
+    save();
+  }
+
+  const fmtBytes = (b) => (b >= 1e9 ? (b / 1e9).toFixed(1).replace(".", ",") + " GB" : Math.max(1, Math.round(b / 1e6)) + " MB");
+  function modelLabel(id) {
+    const m = MODELS.find((x) => x.f16 === id || x.f32 === id);
+    if (m) return { name: m.name, gone: false };
+    return { name: id.replace(/-Instruct.*|-q\d.*$/, "").replace(/-/g, " "), gone: true };
+  }
+
+  async function renderStorage() {
+    const box = $("chatStorage");
+    if (!box) return;
+    const [models, est] = await Promise.all([
+      storedModels().catch(() => new Map()),
+      navigator.storage && navigator.storage.estimate ? navigator.storage.estimate().catch(() => null) : null,
+    ]);
+    // the browser's own estimate can lag (or round down) on iOS: never show less than the models add up to
+    const used = Math.max((est && est.usage) || 0, [...models.values()].reduce((a, b) => a + b, 0));
+    const total = used ? `La app ocupa ${fmtBytes(used)} en este dispositivo.` : "";
+    if (!models.size) {
+      box.innerHTML = `<p class="why">${total} No hay ningún modelo de IA descargado.</p>`;
+      return;
+    }
+    const rows = [...models]
+      .map(([id, bytes]) => {
+        const { name, gone } = modelLabel(id);
+        const tags = [bytes ? fmtBytes(bytes) : "", llm.id === id && llm.engine ? "en uso" : "", gone ? "ya no se usa" : ""].filter(Boolean).join(" · ");
+        return `<div class="store-row"><span><b>${esc(name)}</b><br><span class="faint">${tags}</span></span><button class="quiet" data-del="${esc(id)}">borrar</button></div>`;
+      })
+      .join("");
+    box.innerHTML = `<p class="why">${total} Casi todo son los modelos de IA; se pueden volver a descargar cuando quieras.</p>${rows}
+      <div class="row"><button class="quiet" id="chatStoreAll">borrar todos los modelos</button></div>`;
+    box.querySelectorAll("[data-del]").forEach((b) =>
+      b.addEventListener("click", async () => {
+        const { name } = modelLabel(b.dataset.del);
+        if (!confirm(`¿Borrar ${name} de este dispositivo?`)) return;
+        b.disabled = true;
+        b.textContent = "borrando…";
+        await deleteModelId(b.dataset.del);
+        afterDelete();
+      })
+    );
+    $("chatStoreAll").addEventListener("click", async (e) => {
+      if (!confirm("¿Borrar todos los modelos de IA de este dispositivo?")) return;
+      e.target.disabled = true;
+      e.target.textContent = "borrando…";
+      await deleteAllModels();
+      afterDelete();
+    });
+  }
+
+  function afterDelete() {
     renderSettings();
     renderStatus();
     renderMeta();
@@ -733,7 +832,9 @@ const Chat = (() => {
       ${opts}
       <label class="opt"><input type="radio" name="chatModel" value="none"${C.model === "none" ? " checked" : ""}>
         <span><b>Sin IA</b><br><span class="faint">tutor guiado con preguntas preparadas; corrige igual</span></span></label>
-      <div class="row"><button id="chatModelGo">usar</button><button id="chatModelDel" class="quiet">borrar descarga</button></div>
+      <div class="row"><button id="chatModelGo">usar</button></div>
+      <h3>Espacio</h3>
+      <div id="chatStorage"><p class="why">Calculando…</p></div>
       <h3>Opciones</h3>
       <label class="opt"><input type="checkbox" id="optFix"${C.showFix ? " checked" : ""}><span>Mostrar las correcciones bajo cada mensaje<br><span class="faint">si no, solo un punto que se abre al tocarlo</span></span></label>
       <label class="opt"><input type="checkbox" id="optVoice"${C.voice ? " checked" : ""}${window.speechSynthesis ? "" : " disabled"}><span>Leer en voz alta las respuestas de Lucía</span></label>
@@ -757,10 +858,7 @@ const Chat = (() => {
       toggleSettings(false);
       renderStatus();
     });
-    $("chatModelDel").addEventListener("click", () => {
-      const v = (el.querySelector('input[name="chatModel"]:checked') || {}).value;
-      if (v && v !== "none") deleteModel(v);
-    });
+    renderStorage();
     $("optFix").addEventListener("change", (e) => { C.showFix = e.target.checked; save(); renderLog(); });
     $("optVoice").addEventListener("change", (e) => { C.voice = e.target.checked; save(); if (C.voice) unlockVoice(); });
     $("chatReset").addEventListener("click", () => { if (!busy) { toggleSettings(false); newConversation(); } });

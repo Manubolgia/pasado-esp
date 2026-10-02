@@ -69,8 +69,10 @@ pocos intercambios de muestra con el mismo formato que el turno actual. Las
 respuestas inservibles (en otro idioma, una negativa, repetir la pregunta
 anterior) se descartan y ese turno lo contesta el tutor guiado.
 
-Se descarga una vez (mejor con wifi) y queda en la caché del navegador; se
-puede cambiar o borrar en «ajustes». Sin IA —si el navegador no tiene WebGPU o
+Se descarga una vez (mejor con wifi) y se guarda en los datos de la app, así
+que ocupa espacio del móvil. En «ajustes» → «Espacio» aparece cada modelo
+guardado con lo que ocupa —también los que la app ya no ofrece— y se puede
+borrar uno a uno o todos; cambiar de modelo no borra el anterior. Sin IA —si el navegador no tiene WebGPU o
 el modelo no cabe— la charla sigue con un **tutor guiado** de preguntas
 preparadas, que corrige exactamente igual.
 

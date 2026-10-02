@@ -1,4 +1,4 @@
-const CACHE = "pasado-v13";
+const CACHE = "pasado-v14";
 // the vendored library is pinned by version, so it keeps its own cache across app updates
 const VENDOR = "pasado-vendor-0.2.85";
 const ASSETS = [
