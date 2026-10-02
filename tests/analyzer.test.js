@@ -74,9 +74,12 @@ expect("Hablaba como si es su casa.", ["es>fuera"]);
 // soft hints
 expect("Quería que vengas a la fiesta.", ["vengas>vinieras?"]);
 expect("Ayer voy al cine con mi novio.", ["voy>fui?"]);
-expect("Voy a la playa con mis amigas.", ["Voy>iba?"], "imp");
+expect("Voy a la playa con mis amigas.", [], "imp");
+expect("No, no lo recuerdo.", [], "plusc");
+expect("No sé, creo que estaba en casa.", []);
+expect("Antes voy mucho a la playa.", ["voy>iba?"]);
 expect("¿Qué hicistes ayer? Fuistes al cine.", ["hicistes>hiciste", "Fuistes>Fuiste"]);
-expect("Me levanto, desayuno y voy a trabajar.", ["levanto>levanté?"], "pret");
+expect("El lunes pasado me levanto, desayuno y voy a trabajar.", ["levanto>levanté?"], "pret");
 
 // which past forms were used
 uses("El sábado fuimos a la playa, hacía sol y he dormido la siesta.", ["fuimos:pret", "hacía:imp", "he dormido:perf"]);

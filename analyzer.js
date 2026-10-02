@@ -403,26 +403,25 @@ const Analyzer = (() => {
       }
     }
     if (!soft) {
-      // a present where the past was wanted: only when the sentence has no past
-      // at all and either names a past moment («ayer») or the whole reply is in
-      // the present. «hace dos años», «es que», «me gusta» are left alone.
+      // a present where the past was wanted: only in a sentence that names a past
+      // moment («ayer voy al cine») and has no past verb of its own. A present is
+      // often right in an answer («no me acuerdo», «creo que…», «todavía vivo
+      // allí»), so without such a marker nothing is said.
       const sentText = (s) => {
         const ts = toks.filter((t) => t.sent === s);
         return ts.length ? text.slice(ts[0].start, ts[ts.length - 1].end) : "";
       };
-      const noPastAtAll = uses.length === 0;
+      const NOW_VERBS = new Set(["saber", "recordar", "acordar", "creer", "pensar", "parecer", "gustar", "encantar", "haber", "soler"]);
       for (const o of others) {
         if (o.done) continue;
         const tk = toks[o.k];
         const pr = o.es.find((e) => e.t === "pres");
-        if (!pr) continue;
+        if (!pr || NOW_VERBS.has(pr.v)) continue;
         if (pastSentences.has(tk.sent)) continue;
-        if (["hace", "hay", "es", "gusta", "gustan", "encanta", "encantan", "parece"].includes(tk.w)) continue;
+        if (["hace", "hay", "es"].includes(tk.w)) continue;
         if (prevWord(toks, o.k) === "que" || prevWord(toks, o.k) === "si") continue;
-        const marker = markerTense(sentText(tk.sent));
-        if (!marker && !noPastAtAll) continue;
-        let t = marker || target || "pret";
-        if (!PAST.has(t)) t = "pret";
+        const t = markerTense(sentText(tk.sent));
+        if (!t || t === "perf" && !target) continue;
         soft = { kind: "present", start: tk.start, end: tk.end, fix: formFor(VBY[pr.v], t, pr.p), v: pr.v, t, p: pr.p, sure: false };
         break;
       }

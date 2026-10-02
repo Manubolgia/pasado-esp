@@ -191,17 +191,39 @@ const Chat = (() => {
     if (!pool.length) pool = TOPICS.filter((x) => x.t === t);
     const topic = pool[Math.floor(Math.random() * pool.length)];
     C.recent = [topic.id, ...C.recent].slice(0, 12);
-    C.topic = { id: topic.id, i: 0 };
+    C.topic = { id: topic.id, i: 0, turns: 0, thin: 0 };
     return topic;
   }
 
-  // what the tutor should ask next: the topic's next follow-up, or a new topic
-  function planTurn() {
+  /* What the next turn should do. A real chat follows what she just said, so
+     the tutor stays on the topic and asks about *her* answer. The prepared
+     questions only come in when the thread runs dry: a thin answer (a few words,
+     no past verb), two of those in a row or a long run on one topic moves on to
+     a new topic, and so does «otro tema».
+     Each turn carries a tense "angle" for the follow-up: mostly the topic's
+     tense, now and then its natural partner (what happened ↔ what it was like). */
+  const PARTNER = { pret: "imp", imp: "pret", perf: "pret", plusc: "pret", subj: "imp" };
+  const MAX_TURNS = 8;
+
+  function planTurn(an) {
+    const last = C.msgs[C.msgs.length - 1];
+    const words = last ? last.x.split(/\s+/).filter(Boolean).length : 0;
+    const thin = words < 4 || an.uses.length === 0;
     let topic = C.topic && topicById(C.topic.id);
-    if (topic && S.tsel[topic.t] && C.topic.i < topic.follow.length)
-      return { topic, tense: topic.t, question: topic.follow[C.topic.i++], switched: false };
+    if (topic && S.tsel[topic.t]) {
+      const st = C.topic;
+      st.turns = (st.turns || 0) + 1;
+      st.thin = thin ? (st.thin || 0) + 1 : 0;
+      if (st.turns < MAX_TURNS && st.thin < 2) {
+        let tense = topic.t;
+        if (st.turns % 3 === 0 && S.tsel[PARTNER[tense]]) tense = PARTNER[tense];
+        // a thin answer gets a prepared question to restart from; a full one is followed up
+        const prepared = thin && (st.i || 0) < topic.follow.length ? topic.follow[st.i++] : null;
+        return { topic, tense, prepared, switched: false };
+      }
+    }
     topic = pickTopic();
-    return { topic, tense: topic.t, question: topic.open, switched: true };
+    return { topic, tense: topic.t, prepared: topic.open, switched: true };
   }
 
   /* ---------- tutor replies ---------- */
@@ -219,54 +241,81 @@ const Chat = (() => {
     return Analyzer.formFor(VMAP[f.v], f.t, Analyzer.shiftPerson(f.p));
   }
 
+  // Without a model: react, then follow her answer with a general question in
+  // the turn's tense, so it still reads as a reply to what she said and not as
+  // a questionnaire. Prepared questions only restart a thread that ran dry.
   function guidedReply(an, plan) {
+    // without understanding her answer, a prepared question can ask what she
+    // already said; after a full answer only the general follow-ups are safe
     const f = recastable(an);
-    const react = f ? pick(ECHO)(echoForm(f)) : pick(ACKS);
-    return plan.switched ? `${react} Oye, cambiando de tema: ${plan.question}` : `${react} ${plan.question}`;
+    const react = f ? pick(ECHO)(echoForm(f)) : plan.prepared ? pick(["Vale.", "Bueno.", "Ya."]) : pick(ACKS);
+    if (plan.switched) return `${react} Oye, cambiando de tema: ${plan.prepared}`;
+    return `${react} ${plan.prepared || pick(FOLLOW_UP[plan.tense])}`;
   }
 
-  const SYSTEM =
-    "Eres Lucía, una amiga española, simpática y curiosa, que charla por chat con una chica que está mejorando su español. " +
-    "Escribe siempre en español de España, con frases cortas y naturales: como mucho dos frases y una pregunta. " +
-    "Tu objetivo es que ella cuente cosas de su pasado, así que termina siempre con una sola pregunta que se conteste en pasado. " +
-    "No expliques gramática ni señales sus errores. No uses listas, emojis ni inglés.";
+  /* The persona and the way of talking live in the system prompt; the per-turn
+     steering is one short line after her message. No example questions: a small
+     model copies them word for word, and the chat turns into a questionnaire. */
+  const SYSTEM = [
+    "Eres Lucía, una chica de 30 años de Salamanca que vive en Madrid y trabaja de enfermera. Te encanta viajar, cocinar y pasear a tu perro, Coco. Estás chateando con una amiga que está mejorando su español.",
+    "",
+    "Así escribes:",
+    "- En español de España, coloquial y cariñoso, como en WhatsApp: dos o tres frases cortas.",
+    "- Reaccionas a lo que ella acaba de contar, comentando algún detalle concreto de su mensaje.",
+    "- A veces cuentas en una frase algo tuyo del pasado que tenga que ver.",
+    "- Terminas con una pregunta sobre lo que te ha contado, para que siga hablando de su pasado.",
+    "- Nunca explicas gramática ni corriges. Sin listas, sin emojis, sin inglés.",
+    "",
+    "Ejemplo:",
+    "Ella: El sábado fui a la playa con mis primas.",
+    "Lucía: ¡Qué envidia! Yo este verano casi no pisé la playa. ¿A cuál fuisteis?",
+  ].join("\n");
 
   function noteFor(an, plan) {
-    const parts = ["Reacciona con interés a lo que ha contado, en una o dos frases cortas."];
+    const parts = [];
     const f = recastable(an);
-    if (f && f.kind === "present")
-      parts.push(`Lo ha contado en presente («${f.text}»): al reaccionar usa tú el pasado, por ejemplo «${echoForm(f)}», sin corregirla.`);
-    else if (f)
-      parts.push(`Ha escrito «${f.text}» y lo correcto es «${f.fix}». No se lo digas: usa tú la forma «${echoForm(f)}» con naturalidad en tu respuesta.`);
-    if (plan.switched) parts.push(`Después cambia de tema con naturalidad y pregúntale: «${plan.question}»`);
-    else parts.push(`Termina con una sola pregunta sobre ${TENSE_GUIDE[plan.tense].ask}. Por ejemplo: «${plan.question}»`);
-    return `[Nota para ti, no la menciones: ${parts.join(" ")}]`;
+    if (f) parts.push(`usa con naturalidad la forma «${echoForm(f)}»`);
+    if (plan.switched) parts.push("comenta en una o dos frases lo que te ha contado, sin hacer ninguna pregunta");
+    else if (plan.prepared) parts.push(`pregúntale algo como: «${plan.prepared}»`);
+    else parts.push(`tu pregunta tiene que ser sobre lo que te acaba de contar, para que te cuente ${TENSE_GUIDE[plan.tense].angle}`);
+    return `(Responde como Lucía; ${parts.join("; ")}.)`;
   }
 
   // chat history for the model: alternating turns, starting with the user
   function history() {
-    const turns = C.msgs.slice(-9, -1).map((m) => ({ role: m.r === "u" ? "user" : "assistant", content: m.x }));
+    const turns = C.msgs.slice(-11, -1).map((m) => ({ role: m.r === "u" ? "user" : "assistant", content: m.x }));
     if (turns.length && turns[0].role === "assistant") turns.unshift({ role: "user", content: "¡Hola!" });
     return turns;
   }
 
   const ENGLISH = /\b(the|and|you|what|did|was|were|is|are|my|your|with|that|this)\b/gi;
+  const NOT_SPANISH = /[぀-ヿ㐀-鿿Ѐ-ӿ]/;
+
   function cleanReply(raw, plan) {
     let s = (raw || "")
-      .replace(/\[[^\]]*\]?/g, "") // an echoed note
+      .replace(/\[[^\]]*\]?/g, "")
+      .replace(/\([^)]*(Lucía|responde|usa con|pregúntale|comenta)[^)]*\)?/gi, "") // an echoed steering line
       .replace(/<[^>]*>/g, "")
-      .replace(/[*_#`]/g, "")
+      .replace(/[*_#`"]/g, "")
       .replace(/^\s*(lucía|tutor|asistente)\s*:\s*/i, "")
       .replace(/\s+/g, " ")
       .trim();
-    if (!s || /[぀-ヿ㐀-鿿]/.test(s) || (s.match(ENGLISH) || []).length >= 3) return null;
-    // one question per turn: stop at the first one
-    const q = s.indexOf("?");
-    if (q >= 0) s = s.slice(0, q + 1);
-    else s = s.replace(/[.!…]*$/, ".") + " " + plan.question;
-    if (s.length > 360) return null;
+    // a model can run on and write her side of the chat too
+    s = s.split(/\s(?:Ella|Amiga|Usuario|Tú)\s*:/i)[0].trim();
+    if (!s || NOT_SPANISH.test(s) || (s.match(ENGLISH) || []).length >= 3) return null;
+
+    let sentences = (s.match(/[^.!?…]+[.!?…]+|[^.!?…]+$/g) || [s]).map((x) => x.trim()).filter(Boolean);
+    if (plan.switched) {
+      // the topic change is ours: keep her comment, drop any question, then ask the opener
+      sentences = sentences.filter((x) => !x.endsWith("?")).slice(0, 2);
+      return Analyzer.repair([...sentences, "Oye, cambiando de tema:", plan.prepared].join(" "));
+    }
+    sentences = sentences.slice(0, 4);
+    const lastQ = sentences.map((x) => x.endsWith("?")).lastIndexOf(true);
+    if (lastQ >= 0) sentences = sentences.slice(0, lastQ + 1);
+    else sentences.push(plan.prepared || pick(FOLLOW_UP[plan.tense])); // keep her talking
     // a small model can slip too: fix the forms the engine knows are wrong
-    return Analyzer.repair(s);
+    return Analyzer.repair(sentences.join(" "));
   }
 
   async function llmReply(an, plan, onText) {
@@ -275,29 +324,36 @@ const Chat = (() => {
       ...history(),
       { role: "user", content: C.msgs[C.msgs.length - 1].x + "\n\n" + noteFor(an, plan) },
     ];
-    const timer = setTimeout(() => { try { llm.engine.interruptGenerate(); } catch {} }, 45000);
-    try {
-      const stream = await llm.engine.chat.completions.create({
-        messages,
-        stream: true,
-        temperature: 0.7,
-        top_p: 0.9,
-        max_tokens: 110,
-        frequency_penalty: 0.3,
-      });
-      let out = "";
-      for await (const chunk of stream) {
-        out += (chunk.choices[0] && chunk.choices[0].delta && chunk.choices[0].delta.content) || "";
-        onText(out.replace(/\[[^\]]*\]?/g, ""));
+    // one retry, cooler, before giving the turn to the guided tutor
+    for (const temperature of [0.8, 0.5]) {
+      const timer = setTimeout(() => { try { llm.engine.interruptGenerate(); } catch {} }, 45000);
+      try {
+        const stream = await llm.engine.chat.completions.create({
+          messages,
+          stream: true,
+          temperature,
+          top_p: 0.9,
+          max_tokens: 130,
+          frequency_penalty: 0.3,
+        });
+        let out = "";
+        for await (const chunk of stream) {
+          out += (chunk.choices[0] && chunk.choices[0].delta && chunk.choices[0].delta.content) || "";
+          onText(out.replace(/\[[^\]]*\]?|\([^)]*$/g, ""));
+        }
+        const reply = cleanReply(out, plan);
+        if (reply) return reply;
+        console.warn("pasado: unusable model reply", out);
+      } catch (e) {
+        console.warn("pasado: model error", e);
+        // the GPU can be lost while the app sits in the background; reload next time
+        if (/lost|disposed|destroyed|device/i.test(String(e && e.message))) Object.assign(llm, { state: "off", engine: null });
+        return null;
+      } finally {
+        clearTimeout(timer);
       }
-      return cleanReply(out, plan);
-    } catch (e) {
-      // the GPU can be lost while the app sits in the background; reload next time
-      if (/lost|disposed|destroyed|device/i.test(String(e && e.message))) Object.assign(llm, { state: "off", engine: null });
-      return null;
-    } finally {
-      clearTimeout(timer);
     }
+    return null;
   }
 
   /* ---------- sending ---------- */
@@ -316,7 +372,7 @@ const Chat = (() => {
     learnFrom(an);
     appendUser(text, an);
 
-    const plan = planTurn();
+    const plan = planTurn(an);
     save();
     const bubble = appendTutor("", true);
     let reply = null;

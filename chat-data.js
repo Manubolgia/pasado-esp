@@ -106,13 +106,24 @@ const TOPICS = [
     follow: ["¿Quién te lo dijo?", "¿Te recomendaron que esperaras o que te lanzaras?", "¿Hiciste lo que te pidieron que hicieras?", "¿Qué le aconsejarías a alguien si te preguntara lo mismo?", "¿Alguien te sugirió alguna vez que cambiaras de trabajo?"] },
 ];
 
-// how each tense is described to the model (and to her, in the topic line)
+// how each tense is named in the topic line, and the angle the model's
+// follow-up question should take to draw that tense out of her
 const TENSE_GUIDE = {
-  pret: { name: "indefinido", ask: "qué pasó o qué hizo en un momento concreto (¿Qué hiciste…? ¿Adónde fuiste…? ¿Qué pasó…?)" },
-  imp: { name: "imperfecto", ask: "cómo era algo o qué solía hacer (¿Cómo era…? ¿Qué hacías…? ¿Dónde vivías…?)" },
-  perf: { name: "perfecto", ask: "algo de hoy, de esta semana o de su vida hasta ahora (¿Qué has hecho hoy? ¿Alguna vez has…?)" },
-  plusc: { name: "pluscuamperfecto", ask: "algo que ya había pasado antes de otro momento del pasado (¿Ya habías…? ¿Qué había pasado antes de que…?)" },
-  subj: { name: "imperfecto de subjuntivo", ask: "deseos, peticiones o hipótesis (¿Qué querían que hicieras? Si pudieras…, ¿qué harías?)" },
+  pret: { name: "indefinido", angle: "qué pasó, qué hizo o cómo acabó" },
+  imp: { name: "imperfecto", angle: "cómo era, cómo se sentía o qué solía hacer entonces" },
+  perf: { name: "perfecto", angle: "qué ha hecho hoy, esta semana o alguna vez en su vida" },
+  plusc: { name: "pluscuamperfecto", angle: "qué ya había pasado antes de ese momento" },
+  subj: { name: "imperfecto de subjuntivo", angle: "qué quería que pasara, qué le pidieron que hiciera o qué haría si pudiera" },
+};
+
+// general follow-ups for the guided tutor: they fit almost any answer, so the
+// reply stays on what she said instead of jumping to a new prepared question
+const FOLLOW_UP = {
+  pret: ["¿Y qué pasó después?", "¿Y qué tal, te gustó?", "¿Y cómo acabó la cosa?", "¿Y qué hiciste luego?", "¿Y qué fue lo mejor?", "¿Y cómo reaccionaste?"],
+  imp: ["¿Y cómo era?", "¿Y cómo te sentías?", "¿Y qué más hacíais?", "¿Y te gustaba?", "¿Y quién estaba contigo?"],
+  perf: ["¿Y qué tal ha ido?", "¿Y qué más has hecho?", "¿Te ha gustado?", "¿Y cómo te has sentido?"],
+  plusc: ["¿Y qué había pasado antes?", "¿Lo habías hecho alguna vez antes?", "¿Y ya lo habías planeado?"],
+  subj: ["¿Y qué querías que pasara?", "¿Y qué harías si pudieras repetirlo?", "¿Y si fuera ahora, qué harías?"],
 };
 
 // short, neutral reactions for the guided tutor — they fit any answer
@@ -123,7 +134,6 @@ const ECHO = [
   (f) => `Así que ${f}… ¡qué bien!`,
   (f) => `Ah, ${f}. Entiendo.`,
   (f) => `Vale, ${f}.`,
-  (f) => `¿${f[0].toUpperCase() + f.slice(1)}? ¡Qué interesante!`,
 ];
 
-if (typeof module !== "undefined") module.exports = { TOPICS, TENSE_GUIDE, ACKS, ECHO };
+if (typeof module !== "undefined") module.exports = { TOPICS, TENSE_GUIDE, FOLLOW_UP, ACKS, ECHO };
