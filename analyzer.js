@@ -282,9 +282,31 @@ const Analyzer = (() => {
     return null;
   }
 
-  /* `target` is the tense the tutor's question was steering towards; it is only
-     used to word the soft "this sounds like present" hint. */
-  function analyze(text, target) {
+  /* «hacia» and «sabia» are words of their own (towards, wise) but in «hacia
+     mucho calor» or «no sabia que…» they are hacía/sabía missing the accent */
+  const BEFORE_VERB = new Set("yo él ella usted que no lo la le les me te se nos os siempre ya nunca también tampoco casi solo".split(" "));
+  const WEATHERISH = new Set("calor frío frio sol viento fresco buen mal bueno malo mucho mucha muchos muchas poco poca pocos pocas tanto tanta tiempo años días meses semanas horas rato falta nada eso esto deporte deberes".split(" "));
+  const nextW = (toks, k) => (toks[k + 1] && toks[k + 1].sent === toks[k].sent ? toks[k + 1].w : "");
+  const prevW = (toks, k) => (k > 0 && toks[k - 1].sent === toks[k].sent ? toks[k - 1].w : "");
+  const HOMOGRAPHS = {
+    hacia: { fix: "hacía", verb: (t, k) => BEFORE_VERB.has(prevW(t, k)) || WEATHERISH.has(nextW(t, k)) },
+    sabia: { fix: "sabía", verb: (t, k) => BEFORE_VERB.has(prevW(t, k)) || /^(que|qué|nada|cómo|como|dónde|donde|si|cuándo|quién|mucho|poco|bien|mal)$|(ar|er|ir)$/.test(nextW(t, k)) },
+  };
+
+  // words that can ask for a subjunctive earlier in the sentence
+  const TRIGGERS = new Set("que si ojalá ojala quizá quizás quiza quizas tal aunque para sin antes hasta cuando como".split(" "));
+  // quisiera, pudiera, debiera, hubiera stand alone as polite or conditional forms
+  const MODAL = new Set(["querer", "poder", "deber", "haber"]);
+  // verbs of wish, request or feeling: «quería que», «me pidió que», «me gustó que» + subjunctive
+  const WISH = new Set(["querer", "pedir", "preferir", "recomendar", "aconsejar", "prohibir", "permitir", "necesitar", "gustar", "encantar", "sugerir", "molestar", "sorprender", "esperar"]);
+  // a single event inside a habit: «un día…», «una vez…» are rightly indefinido
+  const ONE_OFF = /\b(un día|una vez|ayer|anoche|aquel día|aquella vez|de repente|el día que|la primera vez|una tarde|una noche|un verano|aquel verano|ese día)\b/i;
+
+  /* `target` is the tense the tutor's question was steering towards and
+     `ctx.qTense` the tense of the question she is answering («¿Qué hacías…?» ->
+     imp). They only shape the softer hints and the best guess for a form that
+     can't stay as written. */
+  function analyze(text, target, ctx = {}) {
     const toks = tokenize(text);
     const uses = []; // {start, end, text, v, t, p}
     const findings = []; // {kind, start, end, text, fix, v, t, p, sure, note}
@@ -331,6 +353,13 @@ const Analyzer = (() => {
       }
 
       /* single words */
+      const hg = HOMOGRAPHS[tk.w];
+      if (hg && hg.verb(toks, k)) {
+        const imp = valid.get(hg.fix).filter((x) => x.t === "imp");
+        finding({ kind: "accent", start: tk.start, end: tk.end, fix: hg.fix, v: imp[0].v, t: "imp", p: imp[0].p, sure: true });
+        uses.push({ start: tk.start, end: tk.end, text: raw(tk.start, tk.end), ...imp[0], all: imp, k, fixed: true });
+        continue;
+      }
       const es = valid.get(tk.w);
       if (es && !NOT_VERBS.has(tk.w)) {
         const past = es.filter((e) => PAST.has(e.t));
@@ -370,6 +399,41 @@ const Analyzer = (() => {
       finding({ kind: "person", start, end, fix: make(e, p), v: e.v, t: e.t, p, sure: true, pron: subj.pron });
     }
 
+    const dropAt = (start) => {
+      for (let i = findings.length - 1; i >= 0; i--) if (findings[i].start === start) findings.splice(i, 1);
+    };
+    const before = (k) => toks.filter((t) => t.sent === toks[k].sent && t.start < toks[k].start).map((t) => t.w);
+
+    /* An imperfect subjunctive with nothing in the sentence to ask for it
+       («hicieramos muchos helados») is a form she reached for by mistake: the
+       accent is the least of it. Offer the indicative the context points to. */
+    const guess = target !== "imp" && (ctx.qTense === "pret" || ctx.qTense === "perf") ? "pret" : "imp";
+    for (const u of uses) {
+      if (u.t !== "subj" || MODAL.has(u.v)) continue;
+      if (before(u.k).some((w) => TRIGGERS.has(w))) continue;
+      dropAt(u.start);
+      const v = VBY[u.v];
+      finding({ kind: "noTrigger", start: u.start, end: u.end, fix: formFor(v, guess, u.p), alt: formFor(v, guess === "imp" ? "pret" : "imp", u.p), v: u.v, t: guess, p: u.p, sure: true });
+      u.t = guess;
+      u.fixed = true;
+    }
+
+    /* «quería que fui», «mi madre quería que soy médica»: after a past verb of
+       wish, request or feeling, «que» takes the imperfect subjunctive */
+    const wishFix = (k, v, p, start, end) => {
+      if (prevWord(toks, k) !== "que" || findings.some((f) => f.start === start)) return false;
+      const w = prevWord(toks, k, 2);
+      const trig = w && (valid.get(w) || []).find((e) => WISH.has(e.v) && ["pret", "imp", "cond"].includes(e.t));
+      if (!trig) return false;
+      finding({ kind: "wishQue", start, end, fix: subjunctive(VBY[v], p, false), v, t: "subj", p, sure: trig.v !== "esperar", trigger: w });
+      return true;
+    };
+    for (const u of uses) if ((u.t === "pret" || u.t === "imp") && !u.fixed && wishFix(u.k, u.v, u.p, u.start, u.end)) u.fixed = true;
+    for (const o of others) {
+      const pr = o.es.find((e) => e.t === "pres");
+      if (pr && wishFix(o.k, pr.v, pr.p, toks[o.k].start, toks[o.k].end)) o.done = true;
+    }
+
     /* «si tendría», «si tenga», «como si es»: these are always wrong */
     for (const o of others) {
       const tk = toks[o.k];
@@ -392,6 +456,12 @@ const Analyzer = (() => {
     /* soft hints — at most one, and never on top of a sure correction of the same word */
     const pastSentences = new Set(uses.map((u) => toks[u.k].sent));
     let soft = null;
+    // asked about habits or how things were («¿Qué hacías…?») and answered with
+    // a one-time past («hice castillos»): suggest the imperfect, gently
+    if (ctx.qTense === "imp" && !ONE_OFF.test(text)) {
+      const u = uses.find((x) => x.t === "pret" && !findings.some((f) => f.start === x.start));
+      if (u) soft = { kind: "aspect", start: u.start, end: u.end, fix: formFor(VBY[u.v], "imp", u.p), v: u.v, t: "imp", p: u.p, sure: false };
+    }
     for (const o of others) {
       if (o.done || soft) continue;
       const tk = toks[o.k];

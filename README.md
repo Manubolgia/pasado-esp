@@ -45,11 +45,12 @@ Dos piezas con papeles separados:
   conjugación que los ejercicios (227 verbos), así que solo señala lo que sabe
   seguro que está mal: irregulares regularizados (*andé*, *tení*, *dormió*,
   *pidí*), participios (*he abrido*), *dijieron*, *teniera*, *hicistes*, tildes
-  (*vivio*, *fué*), persona frente al sujeto (*yo fue*), *si tendría*, *como si
-  es*. Con menos seguridad sugiere («¿quizá…?») el pasado cuando cuentas algo en
-  presente, o el imperfecto de subjuntivo tras «quería que…». No juzga
-  indefinido frente a imperfecto: eso depende del significado, y una corrección
-  equivocada ahí hace más daño que una que falta.
+  (*vivio*, *fué*, *hacia mucho calor*), persona frente al sujeto (*yo fue*),
+  *si tendría*, *como si es*, *quería que soy*, y un subjuntivo sin nada que lo
+  pida (*hicieramos muchos helados* → *hacíamos*). Con menos seguridad sugiere
+  («¿quizá…?») el imperfecto cuando la pregunta era sobre costumbres y contestas
+  con un indefinido (*¿Qué hacías?* — *hice castillos*), o el pasado cuando
+  cuentas en presente algo de «ayer».
 - **Quién habla: una IA pequeña que funciona en el propio dispositivo**
   ([WebLLM](https://github.com/mlc-ai/web-llm) sobre WebGPU, copiada en
   `vendor/` para que funcione sin conexión). Es gratis y no envía nada a
@@ -59,9 +60,14 @@ Dos piezas con papeles separados:
 
 | Modelo | Descarga | Para |
 | --- | --- | --- |
-| Qwen 2.5 · 0,5B | ≈ 0,4 GB | móviles con poca memoria |
-| Llama 3.2 · 1B | ≈ 0,7 GB | móvil (recomendado) |
+| Llama 3.2 · 1B | ≈ 0,7 GB | móviles con poca memoria |
+| Qwen 2.5 · 1,5B | ≈ 1 GB | móvil (recomendado) |
 | Qwen 2.5 · 3B | ≈ 1,8 GB | ordenador (recomendado) |
+
+Los modelos tan pequeños siguen mejor ejemplos que reglas: el prompt son unos
+pocos intercambios de muestra con el mismo formato que el turno actual. Las
+respuestas inservibles (en otro idioma, una negativa, repetir la pregunta
+anterior) se descartan y ese turno lo contesta el tutor guiado.
 
 Se descarga una vez (mejor con wifi) y queda en la caché del navegador; se
 puede cambiar o borrar en «ajustes». Sin IA —si el navegador no tiene WebGPU o

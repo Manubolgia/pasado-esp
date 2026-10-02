@@ -39,16 +39,19 @@ const Chat = (() => {
      Cache Storage. q4f16 needs the shader-f16 GPU feature; without it the
      q4f32 build of the same model is used. */
   const MODELS = [
-    { key: "small", name: "Qwen 2.5 · 0,5B", f16: "Qwen2.5-0.5B-Instruct-q4f16_1-MLC", f32: "Qwen2.5-0.5B-Instruct-q4f32_1-MLC",
-      size: "≈ 0,4 GB", note: "el más ligero; español sencillo, por si el mediano no cabe" },
-    { key: "medium", name: "Llama 3.2 · 1B", f16: "Llama-3.2-1B-Instruct-q4f16_1-MLC", f32: "Llama-3.2-1B-Instruct-q4f32_1-MLC",
-      size: "≈ 0,7 GB", note: "buen equilibrio para el móvil" },
-    { key: "large", name: "Qwen 2.5 · 3B", f16: "Qwen2.5-3B-Instruct-q4f16_1-MLC", f32: "Qwen2.5-3B-Instruct-q4f32_1-MLC",
+    { key: "llama1b", name: "Llama 3.2 · 1B", f16: "Llama-3.2-1B-Instruct-q4f16_1-MLC", f32: "Llama-3.2-1B-Instruct-q4f32_1-MLC",
+      size: "≈ 0,7 GB", note: "el más ligero; conversación sencilla" },
+    { key: "qwen15", name: "Qwen 2.5 · 1,5B", f16: "Qwen2.5-1.5B-Instruct-q4f16_1-MLC", f32: "Qwen2.5-1.5B-Instruct-q4f32_1-MLC",
+      size: "≈ 1 GB", note: "entiende y conversa mejor; en móviles con 4 GB puede no caber" },
+    { key: "qwen3b", name: "Qwen 2.5 · 3B", f16: "Qwen2.5-3B-Instruct-q4f16_1-MLC", f32: "Qwen2.5-3B-Instruct-q4f32_1-MLC",
       size: "≈ 1,8 GB", note: "el más natural; para el ordenador" },
   ];
+  // keys from the first version of the chat
+  const OLD_KEYS = { small: "llama1b", medium: "llama1b", large: "qwen3b" };
+  if (OLD_KEYS[C.model]) C.model = OLD_KEYS[C.model];
   const ua = navigator.userAgent;
   const mobile = /iPhone|iPad|iPod|Android/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-  const recommended = mobile ? "medium" : "large";
+  const recommended = mobile ? "qwen15" : "qwen3b";
   const modelByKey = (k) => MODELS.find((m) => m.key === k);
 
   /* Test seams: the page can be driven without a GPU by defining these before
@@ -205,10 +208,23 @@ const Chat = (() => {
   const PARTNER = { pret: "imp", imp: "pret", perf: "pret", plusc: "pret", subj: "imp" };
   const MAX_TURNS = 8;
 
+  // the topic's next prepared question, skipping any she has already answered
+  // («¿Ibas a la playa…?» right after «iba siempre a la playa»)
+  const STOP = new Set("donde cuando como para pero porque sobre entre desde hasta quien cual cuanto alguna algun mucho mucha muchos muchas otra otro tenias hacias".split(" "));
+  const contentWords = (x) => (x.toLowerCase().match(/\p{L}{5,}/gu) || []).map(Analyzer.strip).filter((w) => !STOP.has(w));
+  function nextPrepared(topic) {
+    const said = new Set(C.msgs.filter((m) => m.r === "u").slice(-8).flatMap((m) => contentWords(m.x)));
+    while ((C.topic.i || 0) < topic.follow.length) {
+      const q = topic.follow[C.topic.i++];
+      if (!contentWords(q).some((w) => said.has(w))) return q;
+    }
+    return null;
+  }
+
   function planTurn(an) {
     const last = C.msgs[C.msgs.length - 1];
     const words = last ? last.x.split(/\s+/).filter(Boolean).length : 0;
-    const thin = words < 4 || an.uses.length === 0;
+    const thin = words <= 2 || (an.uses.length === 0 && words < 5);
     let topic = C.topic && topicById(C.topic.id);
     if (topic && S.tsel[topic.t]) {
       const st = C.topic;
@@ -218,12 +234,12 @@ const Chat = (() => {
         let tense = topic.t;
         if (st.turns % 3 === 0 && S.tsel[PARTNER[tense]]) tense = PARTNER[tense];
         // a thin answer gets a prepared question to restart from; a full one is followed up
-        const prepared = thin && (st.i || 0) < topic.follow.length ? topic.follow[st.i++] : null;
-        return { topic, tense, prepared, switched: false };
+        const prepared = thin ? nextPrepared(topic) : null;
+        return { topic, tense, prepared, switched: false, thin };
       }
     }
     topic = pickTopic();
-    return { topic, tense: topic.t, prepared: topic.open, switched: true };
+    return { topic, tense: topic.t, prepared: topic.open, switched: true, thin };
   }
 
   /* ---------- tutor replies ---------- */
@@ -248,84 +264,105 @@ const Chat = (() => {
     // without understanding her answer, a prepared question can ask what she
     // already said; after a full answer only the general follow-ups are safe
     const f = recastable(an);
-    const react = f ? pick(ECHO)(echoForm(f)) : plan.prepared ? pick(["Vale.", "Bueno.", "Ya."]) : pick(ACKS);
+    const react = f ? pick(ECHO)(echoForm(f)) : plan.thin ? pick(["Vale.", "Bueno.", "Ya."]) : pick(ACKS);
     if (plan.switched) return `${react} Oye, cambiando de tema: ${plan.prepared}`;
     return `${react} ${plan.prepared || pick(FOLLOW_UP[plan.tense])}`;
   }
 
-  /* The persona and the way of talking live in the system prompt; the per-turn
-     steering is one short line after her message. No example questions: a small
-     model copies them word for word, and the chat turns into a questionnaire. */
-  const SYSTEM = [
-    "Eres Lucía, una chica de 30 años de Salamanca que vive en Madrid y trabaja de enfermera. Te encanta viajar, cocinar y pasear a tu perro, Coco. Estás chateando con una amiga que está mejorando su español.",
-    "",
-    "Así escribes:",
-    "- En español de España, coloquial y cariñoso, como en WhatsApp: dos o tres frases cortas.",
-    "- Reaccionas a lo que ella acaba de contar, comentando algún detalle concreto de su mensaje.",
-    "- A veces cuentas en una frase algo tuyo del pasado que tenga que ver.",
-    "- Terminas con una pregunta sobre lo que te ha contado, para que siga hablando de su pasado.",
-    "- Nunca explicas gramática ni corriges. Sin listas, sin emojis, sin inglés.",
-    "",
-    "Ejemplo:",
-    "Ella: El sábado fui a la playa con mis primas.",
-    "Lucía: ¡Qué envidia! Yo este verano casi no pisé la playa. ¿A cuál fuisteis?",
-  ].join("\n");
+  /* Small models follow examples far better than rules. So the prompt is a
+     short instruction plus worked examples in a fixed format — the question
+     Lucía asked, her answer, the form to work in, the tense to ask in — and the
+     model sees only the current exchange in that same format. No persona to
+     act out, no history to get lost in, no example question to copy. The
+     examples cover the cases that went wrong: a phrase that reads alarming out
+     of context («tirarme en paracaídas»), an answer without a verb, a recast. */
+  const SYSTEM =
+    "Eres Lucía, una amiga española que charla por chat con una chica que está aprendiendo español. " +
+    "Contestas en español de España con una reacción corta y cariñosa a lo que ella dice y después una pregunta sobre eso mismo. " +
+    "Como mucho dos frases.";
+  const TENSE_WORD = { pret: "indefinido", imp: "imperfecto", perf: "perfecto", plusc: "pluscuamperfecto", subj: "imperfecto de subjuntivo" };
+  const turnText = (q, a, use, t) =>
+    `Lucía preguntó: ${q}\nElla respondió: ${a}\n${use ? `Usa la forma «${use}».\n` : ""}Tu pregunta, en ${TENSE_WORD[t]}.`;
+  const SHOTS = [
+    ["¿Qué hiciste el fin de semana pasado?", "Fui a la playa con mis primas.", null, "pret",
+      "¡Qué envidia! ¿A qué playa fuisteis?"],
+    ["¿Cómo era tu vida cuando eras pequeña?", "Vivía en un pueblo y jugaba mucho en la calle.", null, "imp",
+      "¡Qué bonito! ¿A qué jugabas con tus amigos?"],
+    ["¿Hay algo que siempre has querido hacer y todavía no has hecho?", "Siempre quise tirarme en paracaídas.", null, "perf",
+      "¡Qué valiente! Yo no me atrevería. ¿Por qué no lo has hecho todavía?"],
+    ["¿Qué tal ayer?", "Ayer andé por el centro con mi novio.", "anduviste", "pret",
+      "¡Qué plan más bonito! ¿Por dónde anduviste?"],
+    ["¿Qué hacías en verano cuando eras niña?", "Hice castillos de arena en la playa.", "hacías", "imp",
+      "¡Qué bonito! Yo también hacía castillos de arena. ¿Con quién ibas a la playa?"],
+    ["¿Qué querían tus padres que fueras de mayor?", "Mi madre quería que soy médica.", "fueras", "imp",
+      "Así que tu madre quería que fueras médica. ¿Y a ti te gustaba la idea?"],
+    ["¿Qué has hecho hoy?", "Trabajar y luego gimnasio.", null, "perf",
+      "¡Qué día más completo! ¿Has entrenado mucho en el gimnasio?"],
+    ["Cuando cumpliste dieciocho años, ¿qué cosas ya habías hecho?", "Ya había viajado sola a Londres.", null, "plusc",
+      "¡Qué independiente! ¿Y ya habías estado fuera de España antes de eso?"],
+  ];
 
-  function noteFor(an, plan) {
-    const parts = [];
-    const f = recastable(an);
-    if (f) parts.push(`usa con naturalidad la forma «${echoForm(f)}»`);
-    if (plan.switched) parts.push("comenta en una o dos frases lo que te ha contado, sin hacer ninguna pregunta");
-    else if (plan.prepared) parts.push(`pregúntale algo como: «${plan.prepared}»`);
-    else parts.push(`tu pregunta tiene que ser sobre lo que te acaba de contar, para que te cuente ${TENSE_GUIDE[plan.tense].angle}`);
-    return `(Responde como Lucía; ${parts.join("; ")}.)`;
-  }
-
-  // chat history for the model: alternating turns, starting with the user
-  function history() {
-    const turns = C.msgs.slice(-11, -1).map((m) => ({ role: m.r === "u" ? "user" : "assistant", content: m.x }));
-    if (turns.length && turns[0].role === "assistant") turns.unshift({ role: "user", content: "¡Hola!" });
-    return turns;
+  // the last question Lucía asked, to frame her answer
+  function lastQuestion() {
+    for (let i = C.msgs.length - 2; i >= 0; i--)
+      if (C.msgs[i].r === "t") {
+        const qs = C.msgs[i].x.match(/[^.!?…]*¿[^?]*\?/g);
+        return qs ? qs[qs.length - 1].trim() : C.msgs[i].x;
+      }
+    return "¡Hola!";
   }
 
   const ENGLISH = /\b(the|and|you|what|did|was|were|is|are|my|your|with|that|this)\b/gi;
   const NOT_SPANISH = /[぀-ヿ㐀-鿿Ѐ-ӿ]/;
+  // a small model's safety training can misfire on harmless phrases; never show that
+  const REFUSAL = /(no puedo (continuar|ayudar|seguir|responder|hablar)|lo siento, pero|como (modelo|asistente|ia)|soy (una|un) (ia|modelo|asistente)|no te preocupes, eres|si estás pensando en hacerte daño|línea de ayuda|teléfono de la esperanza)/i;
+  const normQ = (x) => Analyzer.strip(x.toLowerCase()).replace(/[^a-zñ ]/g, "").trim();
 
   function cleanReply(raw, plan) {
     let s = (raw || "")
+      .split("\n")[0]
       .replace(/\[[^\]]*\]?/g, "")
-      .replace(/\([^)]*(Lucía|responde|usa con|pregúntale|comenta)[^)]*\)?/gi, "") // an echoed steering line
       .replace(/<[^>]*>/g, "")
       .replace(/[*_#`"]/g, "")
       .replace(/^\s*(lucía|tutor|asistente)\s*:\s*/i, "")
       .replace(/\s+/g, " ")
       .trim();
-    // a model can run on and write her side of the chat too
-    s = s.split(/\s(?:Ella|Amiga|Usuario|Tú)\s*:/i)[0].trim();
-    if (!s || NOT_SPANISH.test(s) || (s.match(ENGLISH) || []).length >= 3) return null;
+    s = s.split(/\s(?:Ella|Lucía preguntó|Usa la forma|Tu pregunta)\b/i)[0].trim();
+    if (!s || NOT_SPANISH.test(s) || REFUSAL.test(s) || (s.match(ENGLISH) || []).length >= 3) return null;
 
     let sentences = (s.match(/[^.!?…]+[.!?…]+|[^.!?…]+$/g) || [s]).map((x) => x.trim()).filter(Boolean);
     if (plan.switched) {
       // the topic change is ours: keep her comment, drop any question, then ask the opener
       sentences = sentences.filter((x) => !x.endsWith("?")).slice(0, 2);
+      if (!sentences.length) sentences = [pick(ACKS)];
       return Analyzer.repair([...sentences, "Oye, cambiando de tema:", plan.prepared].join(" "));
     }
-    sentences = sentences.slice(0, 4);
+    sentences = sentences.slice(0, 3);
     const lastQ = sentences.map((x) => x.endsWith("?")).lastIndexOf(true);
     if (lastQ >= 0) sentences = sentences.slice(0, lastQ + 1);
-    else sentences.push(plan.prepared || pick(FOLLOW_UP[plan.tense])); // keep her talking
+    else sentences.push(pick(FOLLOW_UP[plan.tense]));
+    // asking again what was just asked means it didn't understand her answer
+    const asked = new Set(C.msgs.filter((m) => m.r === "t").slice(-3).flatMap((m) => (m.x.match(/¿[^?]*\?/g) || []).map(normQ)));
+    const q = sentences[sentences.length - 1];
+    if (asked.has(normQ((q.match(/¿[^?]*\?/) || [q])[0]))) return null;
     // a small model can slip too: fix the forms the engine knows are wrong
     return Analyzer.repair(sentences.join(" "));
   }
 
   async function llmReply(an, plan, onText) {
-    const messages = [
-      { role: "system", content: SYSTEM },
-      ...history(),
-      { role: "user", content: C.msgs[C.msgs.length - 1].x + "\n\n" + noteFor(an, plan) },
-    ];
+    const f = recastable(an);
+    const use = f && f.kind !== "accent" ? echoForm(f) : null;
+    const messages = [{ role: "system", content: SYSTEM }];
+    for (const [q, a, u, t, reply] of SHOTS) {
+      messages.push({ role: "user", content: turnText(q, a, u, t) });
+      messages.push({ role: "assistant", content: reply });
+    }
+    // the subjunctive comes from the topic's own questions («¿Qué querían que…?»);
+    // a follow-up in the imperfect is the natural way to keep that thread going
+    const tense = plan.tense === "subj" ? "imp" : plan.tense;
+    messages.push({ role: "user", content: turnText(lastQuestion(), C.msgs[C.msgs.length - 1].x, use, tense) });
     // one retry, cooler, before giving the turn to the guided tutor
-    for (const temperature of [0.8, 0.5]) {
+    for (const temperature of [0.6, 0.3]) {
       const timer = setTimeout(() => { try { llm.engine.interruptGenerate(); } catch {} }, 45000);
       try {
         const stream = await llm.engine.chat.completions.create({
@@ -333,13 +370,14 @@ const Chat = (() => {
           stream: true,
           temperature,
           top_p: 0.9,
-          max_tokens: 130,
-          frequency_penalty: 0.3,
+          max_tokens: 70,
+          stop: ["\n"],
         });
         let out = "";
         for await (const chunk of stream) {
           out += (chunk.choices[0] && chunk.choices[0].delta && chunk.choices[0].delta.content) || "";
-          onText(out.replace(/\[[^\]]*\]?|\([^)]*$/g, ""));
+          // don't stream a refusal onto the screen before it's filtered out
+          if (!REFUSAL.test(out)) onText(out.split("\n")[0]);
         }
         const reply = cleanReply(out, plan);
         if (reply) return reply;
@@ -368,7 +406,7 @@ const Chat = (() => {
     unlockVoice();
 
     pushMsg("u", text);
-    const an = Analyzer.analyze(text, C.topic && topicById(C.topic.id) && topicById(C.topic.id).t);
+    const an = analyzeReply(text, lastQuestion());
     learnFrom(an);
     appendUser(text, an);
 
@@ -393,6 +431,13 @@ const Chat = (() => {
     renderMeta();
     busy = false;
     speak(reply);
+  }
+
+  // the tense of the question she is answering shapes the hints («¿Qué hacías?» -> imp)
+  function analyzeReply(text, question) {
+    const u = Analyzer.analyze(question || "").uses[0];
+    const topic = C.topic && topicById(C.topic.id);
+    return Analyzer.analyze(text, topic && topic.t, { qTense: u && u.t });
   }
 
   function pushMsg(r, x) {
@@ -464,13 +509,16 @@ const Chat = (() => {
     comoSi: () => "«Como si» siempre va con imperfecto de subjuntivo: como si fuera, como si supiera.",
     sequence: () => "Con un verbo en pasado delante (quería que…, me pidió que…), lo habitual es el imperfecto de subjuntivo.",
     present: (f) => `Lo has contado en presente. Si hablas del pasado, sería «${f.fix}».`,
+    noTrigger: (f) => `Aquí no hay nada que pida subjuntivo (quería que…, si…, como si…). Para contar lo que pasaba: «${f.fix}»; si fue una sola vez, «${f.alt}».`,
+    wishQue: (f) => `Después de «${f.trigger} que» va imperfecto de subjuntivo: «${f.fix}».`,
+    aspect: (f) => `Si hablas de algo habitual o de cómo eran las cosas, va en imperfecto: «${f.fix}». Si fue una sola vez, está bien así.`,
   };
 
   function explain(f) {
     const v = VMAP[f.v];
     const note = (KIND_NOTE[f.kind] || (() => ""))(f);
     let how = "";
-    if (v && f.kind !== "accent" && f.kind !== "present" && f.kind !== "sequence") {
+    if (v && !["accent", "present", "sequence", "aspect"].includes(f.kind)) {
       const t = f.t === "part" ? "perf" : f.t;
       if (TENSES.includes(t)) how = explainForm(v, t, Math.max(0, f.p));
     }
@@ -535,9 +583,14 @@ const Chat = (() => {
     log().innerHTML = "";
     $("chatForm").hidden = C.model === null;
     if (C.model === null) return renderWelcome();
+    let q = "";
     for (const m of C.msgs) {
-      if (m.r === "u") appendUser(m.x, Analyzer.analyze(m.x));
-      else appendTutor(m.x);
+      if (m.r === "u") appendUser(m.x, analyzeReply(m.x, q));
+      else {
+        appendTutor(m.x);
+        const qs = m.x.match(/¿[^?]*\?/g);
+        q = qs ? qs[qs.length - 1] : m.x;
+      }
     }
   }
 

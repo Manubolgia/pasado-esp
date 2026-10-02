@@ -7,9 +7,9 @@ vm.runInThisContext(fs.readFileSync(path.join(root, "data.js"), "utf8"));
 vm.runInThisContext(fs.readFileSync(path.join(root, "analyzer.js"), "utf8") + "\nglobalThis.Analyzer = Analyzer;");
 
 let fails = 0;
-const fixes = (text, target) => Analyzer.analyze(text, target).findings.map((f) => `${f.text}>${f.fix}${f.sure ? "" : "?"}`);
-function expect(text, want, target) {
-  const got = fixes(text, target);
+const fixes = (text, target, ctx) => Analyzer.analyze(text, target, ctx).findings.map((f) => `${f.text}>${f.fix}${f.sure ? "" : "?"}`);
+function expect(text, want, target, ctx) {
+  const got = fixes(text, target, ctx);
   const ok = JSON.stringify(got) === JSON.stringify(want);
   if (!ok) fails++;
   console.log(`${ok ? "ok  " : "FAIL"} ${text}\n      ${JSON.stringify(got)}${ok ? "" : "  wanted " + JSON.stringify(want)}`);
@@ -80,6 +80,31 @@ expect("No sé, creo que estaba en casa.", []);
 expect("Antes voy mucho a la playa.", ["voy>iba?"]);
 expect("¿Qué hicistes ayer? Fuistes al cine.", ["hicistes>hiciste", "Fuistes>Fuiste"]);
 expect("El lunes pasado me levanto, desayuno y voy a trabajar.", ["levanto>levanté?"], "pret");
+
+// homographs: hacia / sabia
+expect("Bien, hacia mucho calor pero me gustaba.", ["hacia>hacía"]);
+expect("No sabia que estabas aquí.", ["sabia>sabía"]);
+expect("Fuimos hacia la playa.", []);
+expect("Mi abuela era una mujer sabia.", []);
+
+// a subjunctive with nothing to ask for it
+expect("Hicieramos muchos helados.", ["Hicieramos>Hacíamos"], undefined, { qTense: "imp" });
+expect("Comiéramos paella.", ["Comiéramos>Comimos"], undefined, { qTense: "pret" });
+expect("hicieramos muchos helados", ["hicieramos>hacíamos"], "imp", { qTense: "pret" });
+expect("Si tuviéramos tiempo, iríamos.", []);
+expect("Me gustaría que vinieras.", []);
+expect("Quisiera un café.", []);
+
+// que + indicative after a verb of wish
+expect("Mi madre quería que soy médica.", ["soy>fuera"]);
+expect("Me pidió que le ayudo con la mudanza.", ["ayudo>ayudara"]);
+expect("Quería que fui con ella.", ["fui>fuera"]);
+expect("Me dijo que vino tarde.", []);
+
+// asked about a habit, answered with a one-off
+expect("Hice castillos de arena.", ["Hice>hacía?"], "imp", { qTense: "imp" });
+expect("Un día hice un castillo enorme.", [], "imp", { qTense: "imp" });
+expect("Hice castillos de arena.", [], "pret", { qTense: "pret" });
 
 // which past forms were used
 uses("El sábado fuimos a la playa, hacía sol y he dormido la siesta.", ["fuimos:pret", "hacía:imp", "he dormido:perf"]);

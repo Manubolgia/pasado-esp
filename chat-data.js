@@ -106,14 +106,13 @@ const TOPICS = [
     follow: ["¿Quién te lo dijo?", "¿Te recomendaron que esperaras o que te lanzaras?", "¿Hiciste lo que te pidieron que hicieras?", "¿Qué le aconsejarías a alguien si te preguntara lo mismo?", "¿Alguien te sugirió alguna vez que cambiaras de trabajo?"] },
 ];
 
-// how each tense is named in the topic line, and the angle the model's
-// follow-up question should take to draw that tense out of her
+// how each tense is named in the topic line
 const TENSE_GUIDE = {
-  pret: { name: "indefinido", angle: "qué pasó, qué hizo o cómo acabó" },
-  imp: { name: "imperfecto", angle: "cómo era, cómo se sentía o qué solía hacer entonces" },
-  perf: { name: "perfecto", angle: "qué ha hecho hoy, esta semana o alguna vez en su vida" },
-  plusc: { name: "pluscuamperfecto", angle: "qué ya había pasado antes de ese momento" },
-  subj: { name: "imperfecto de subjuntivo", angle: "qué quería que pasara, qué le pidieron que hiciera o qué haría si pudiera" },
+  pret: { name: "indefinido" },
+  imp: { name: "imperfecto" },
+  perf: { name: "perfecto" },
+  plusc: { name: "pluscuamperfecto" },
+  subj: { name: "imperfecto de subjuntivo" },
 };
 
 // general follow-ups for the guided tutor: they fit almost any answer, so the
