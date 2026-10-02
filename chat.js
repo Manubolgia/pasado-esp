@@ -518,7 +518,7 @@ const Chat = (() => {
       reply = await llmReply(an, plan, (t) => {
         bubble.querySelector(".txt").textContent = t;
         bubble.classList.remove("typing");
-        keepInView();
+        keepInView(true);
       });
     } else {
       await new Promise((r) => setTimeout(r, 450 + Math.random() * 400)); // a beat, so it reads as a reply
@@ -570,9 +570,23 @@ const Chat = (() => {
 
   const log = () => $("chatLog");
 
-  function keepInView() {
-    const el = log().lastElementChild;
-    if (el) requestAnimationFrame(() => el.scrollIntoView({ block: "end", behavior: "smooth" }));
+  /* Follow the conversation like a messaging app. Scrolling a message "into
+     view" isn't enough: the input box is pinned to the bottom of the screen
+     (and on the iPhone the keyboard sits under it), so a message aligned to
+     the bottom edge ends up hidden behind them. The input is the last thing
+     on the page, so scrolling to the very end puts the newest message right
+     above it. While a reply streams in it only follows if she hasn't scrolled
+     up to reread something. */
+  const nearBottom = () => window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 160;
+  function toBottom(smooth) {
+    requestAnimationFrame(() =>
+      window.scrollTo({ top: document.documentElement.scrollHeight, behavior: smooth ? "smooth" : "auto" })
+    );
+  }
+  function keepInView(streaming = false) {
+    if ($("tab-chat").hidden) return;
+    if (streaming) { if (nearBottom()) toBottom(false); }
+    else toBottom(true);
   }
 
   // her message, with the past forms underlined and the slips marked
@@ -904,7 +918,17 @@ const Chat = (() => {
   }
 
   $("chatForm").addEventListener("submit", (e) => { e.preventDefault(); send(); });
-  $("chatInput").addEventListener("input", autosize);
+  $("chatInput").addEventListener("input", () => {
+    const stick = nearBottom();
+    autosize();
+    if (stick) toBottom(false);
+  });
+  // the iPhone keyboard opening shrinks the visible area: keep the newest message above it
+  if (window.visualViewport)
+    visualViewport.addEventListener("resize", () => {
+      if (!$("tab-chat").hidden && document.activeElement === $("chatInput")) toBottom(false);
+    });
+  $("chatInput").addEventListener("focus", () => setTimeout(() => toBottom(true), 350));
   $("chatInput").addEventListener("keydown", (e) => {
     // Enter sends (the iPhone keyboard shows «enviar»); Shift+Enter is a new line
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
@@ -949,6 +973,7 @@ const Chat = (() => {
       renderTopic();
     }
     renderStatus();
+    toBottom(false);
     if (C.model && modelByKey(C.model) && llm.state === "off" && !isCrashed(C.model) && !crashNotice) loadModel(C.model);
   }
 
