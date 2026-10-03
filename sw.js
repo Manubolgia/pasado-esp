@@ -1,4 +1,4 @@
-const CACHE = "pasado-v15";
+const CACHE = "pasado-v16";
 // the vendored library is pinned by version, so it keeps its own cache across app updates
 const VENDOR = "pasado-vendor-0.2.85";
 const ASSETS = [
@@ -9,6 +9,7 @@ const ASSETS = [
   "app.js",
   "analyzer.js",
   "chat-data.js",
+  "gemini.js",
   "chat.js",
   "manifest.webmanifest",
   "icons/icon.svg",

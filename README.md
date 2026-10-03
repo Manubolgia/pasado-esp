@@ -51,7 +51,19 @@ Dos piezas con papeles separados:
   («¿quizá…?») el imperfecto cuando la pregunta era sobre costumbres y contestas
   con un indefinido (*¿Qué hacías?* — *hice castillos*), o el pasado cuando
   cuentas en presente algo de «ayer».
-- **Quién habla: una IA pequeña que funciona en el propio dispositivo**
+- **Quién habla: Gemini o una IA pequeña en el propio dispositivo.**
+  **Gemini** (`gemini.js`) usa tu propia clave gratuita de
+  [Google AI Studio](https://aistudio.google.com/apikey): se pega una vez en la
+  bienvenida o en «ajustes» y solo se guarda en ese dispositivo (aparte del
+  progreso). No hay que descargar nada y conversa mucho mejor, pero necesita
+  conexión y los mensajes van a Google (con la clave gratuita, Google puede
+  usarlos para mejorar sus productos). Hay dos opciones, *Gemini Flash* y
+  *Flash-Lite*, con los alias `gemini-flash-latest` y `gemini-flash-lite-latest`,
+  que siguen a los modelos actuales de Google. Gemini recibe la conversación
+  reciente y las mismas instrucciones del turno (qué forma reformular, en qué
+  tiempo preguntar). Si la clave falla o se agota el cupo gratuito, lo dice y
+  sigue el tutor guiado.
+  **La IA en el dispositivo**
   ([WebLLM](https://github.com/mlc-ai/web-llm) sobre WebGPU, copiada en
   `vendor/` para que funcione sin conexión). Es gratis y no envía nada a
   ningún servidor. Recibe en cada turno qué forma debe reformular y hacia qué

@@ -3,12 +3,13 @@
    Two halves with a strict division of labour:
    - analyzer.js reads what she writes. It is deterministic and only flags what
      the conjugation engine knows is wrong, so a correction is never invented.
-   - the tutor answers. With a model loaded it is a small LLM running on the
-     device through WebLLM (WebGPU); it is told what to recast and which tense to
-     steer towards, so all it has to do is chat. Without a model — no WebGPU,
-     not enough memory, or simply not downloaded — a guided tutor asks the
-     prepared questions in chat-data.js instead. The chat never depends on the
-     model being there.
+   - the tutor answers. With a model it is either Gemini, reached with her own
+     free API key (gemini.js), or a small LLM running on the device through
+     WebLLM (WebGPU); either way it is told what to recast and which tense to
+     steer towards, so all it has to do is chat. Without a model — no key, no
+     connection, no WebGPU, not enough memory, or simply not downloaded — a
+     guided tutor asks the prepared questions in chat-data.js instead. The chat
+     never depends on the model being there.
 
    Corrections are non-invasive: the tutor recasts the right form in its reply
    instead of pointing at the mistake, and the details sit in a small note under
@@ -21,7 +22,7 @@ const Chat = (() => {
   const C = (S.chat = Object.assign(
     {
       msgs: [], // {r: "u" | "t", x: text}
-      model: null, // a MODELS key, "none" for the guided tutor, null before the first choice
+      model: null, // a CLOUD or MODELS key, "none" for the guided tutor, null before the first choice
       voice: false,
       showFix: true,
       topic: null, // {id, i}: current topic and how many follow-ups were used
@@ -54,6 +55,17 @@ const Chat = (() => {
   const recommended = mobile ? "qwen15" : "qwen3b";
   const modelByKey = (k) => MODELS.find((m) => m.key === k);
 
+  /* Gemini runs on Google's servers with her own free key: nothing to
+     download and far better conversation, but it needs a connection and her
+     messages go to Google. The «-latest» names follow Google's current Flash
+     models, so the app doesn't break when one is retired. */
+  const CLOUD = [
+    { key: "gemini", name: "Gemini Flash", api: "gemini-flash-latest", note: "el que mejor conversa" },
+    { key: "geminilite", name: "Gemini Flash-Lite", api: "gemini-flash-lite-latest", note: "más rápido; cupo gratuito aparte, por si se agota el otro" },
+  ];
+  const cloudByKey = (k) => CLOUD.find((m) => m.key === k);
+  const aiByKey = (k) => modelByKey(k) || cloudByKey(k);
+
   /* Test seams: the page can be driven without a GPU by defining these before
      chat.js runs (see tests/). Production never sets them. */
   const probeGPU = window.__pasadoGPU || realProbeGPU;
@@ -69,7 +81,7 @@ const Chat = (() => {
     }
   }
 
-  const llm = { state: "off", engine: null, id: null, progress: 0, phase: "", error: "" };
+  const llm = { state: "off", engine: null, id: null, cloud: false, progress: 0, phase: "", error: "" };
   let gpu = null; // probe result, filled lazily
   let busy = false; // a reply is being written
 
@@ -95,6 +107,7 @@ const Chat = (() => {
   /* ---------- model loading ---------- */
 
   async function loadModel(key) {
+    if (cloudByKey(key)) return connectCloud(key);
     const m = modelByKey(key);
     if (!m || llm.state === "loading") return;
     gpu = gpu || (await probeGPU());
@@ -109,7 +122,7 @@ const Chat = (() => {
       try { await llm.engine.unload(); } catch {}
       llm.engine = null;
     }
-    Object.assign(llm, { state: "loading", id, progress: 0, phase: C.dl[id] ? "load" : "download", error: "" });
+    Object.assign(llm, { state: "loading", id, cloud: false, progress: 0, phase: C.dl[id] ? "load" : "download", error: "" });
     renderStatus();
     setGuard({ id, phase: "download", t: Date.now() });
     try {
@@ -148,7 +161,35 @@ const Chat = (() => {
     renderMeta();
   }
 
+  // Nothing to load for Gemini: one tiny request checks the key and the model
+  // before the first real turn, so a bad key shows up now and not mid-chat.
+  async function connectCloud(key) {
+    const m = cloudByKey(key);
+    if (llm.state === "loading") return;
+    if (llm.engine) {
+      try { await llm.engine.unload(); } catch {}
+    }
+    const apiKey = Gemini.getKey();
+    Object.assign(llm, { state: "loading", engine: null, id: m.api, cloud: true, progress: 0, phase: "connect", error: "" });
+    if (!apiKey) Object.assign(llm, { state: "error", error: "Falta la clave de Gemini: pégala en ajustes." });
+    renderStatus();
+    if (!apiKey) return;
+    try {
+      const engine = Gemini.engine(m.api, apiKey);
+      await engine.chat.completions.create({ messages: [{ role: "user", content: "Hola" }], max_tokens: 1 });
+      // she may have switched to the guided tutor while this was checked
+      if (llm.id !== m.api) return;
+      Object.assign(llm, { state: "ready", engine });
+    } catch (e) {
+      if (llm.id !== m.api) return;
+      Object.assign(llm, { state: "error", engine: null, error: describeError(e) });
+    }
+    renderStatus();
+    renderMeta();
+  }
+
   function describeError(e) {
+    if (llm.cloud) return Gemini.describe(e) || "No se pudo conectar con Gemini (" + String((e && e.message) || e).slice(0, 120) + ").";
     const s = String((e && e.message) || e);
     if (/fetch|network|Failed to fetch|NetworkError/i.test(s)) return "No se pudo descargar el modelo. Comprueba la conexión y vuelve a intentarlo.";
     if (/memory|OOM|allocation|too large|maxBufferSize|maxStorageBufferBindingSize/i.test(s)) return "El modelo no cabe en la memoria de este dispositivo. Prueba uno más pequeño.";
@@ -215,7 +256,7 @@ const Chat = (() => {
   }
 
   async function deleteAllModels() {
-    await unloadIf([llm.id]);
+    if (!llm.cloud) await unloadIf([llm.id]);
     if (window.caches) for (const name of await caches.keys()) if (isModelCache(name)) await caches.delete(name);
     C.dl = {};
     forgetChoiceIfGone();
@@ -401,6 +442,28 @@ const Chat = (() => {
       "¡Qué independiente! ¿Y ya habías estado fuera de España antes de eso?"],
   ];
 
+  /* Gemini doesn't need examples: it reads the conversation itself, and the
+     plan for this turn comes as instructions. */
+  const CLOUD_SYSTEM =
+    "Eres Lucía, una amiga española que charla por chat con una chica que está aprendiendo español y practica los tiempos del pasado. " +
+    "Escribe en español de España, natural y cercano, como en un chat entre amigas: una reacción corta a lo que ella acaba de decir y una sola pregunta sobre eso mismo que la invite a contar más. " +
+    "Como mucho dos frases, en una sola línea, sin emojis ni listas. " +
+    "Nunca la corrijas ni hables de gramática: si se equivoca en una forma, tú la usas bien en tu respuesta, con naturalidad.";
+
+  function cloudMessages(use, tense, plan) {
+    const turn = [
+      use ? `En tu respuesta usa la forma «${use}».` : "",
+      plan.switched
+        ? "Esta vez no hagas ninguna pregunta: solo reacciona a lo que ha dicho, porque después vais a cambiar de tema."
+        : plan.thin && plan.prepared
+          ? `Ha contestado muy poco: sigue con esta pregunta, o con una parecida: ${plan.prepared}`
+          : `Haz la pregunta en pretérito ${TENSE_WORD[tense]}, para que ella conteste en ese tiempo.`,
+    ].filter(Boolean).join(" ");
+    const messages = [{ role: "system", content: CLOUD_SYSTEM + "\n\nEn esta respuesta: " + turn }];
+    for (const m of C.msgs.slice(-16)) messages.push({ role: m.r === "u" ? "user" : "assistant", content: m.x });
+    return messages;
+  }
+
   // the last question Lucía asked, to frame her answer
   function lastQuestion() {
     for (let i = C.msgs.length - 2; i >= 0; i--)
@@ -451,15 +514,19 @@ const Chat = (() => {
   async function llmReply(an, plan, onText) {
     const f = recastable(an);
     const use = f && f.kind !== "accent" ? echoForm(f) : null;
-    const messages = [{ role: "system", content: SYSTEM }];
-    for (const [q, a, u, t, reply] of SHOTS) {
-      messages.push({ role: "user", content: turnText(q, a, u, t) });
-      messages.push({ role: "assistant", content: reply });
-    }
     // the subjunctive comes from the topic's own questions («¿Qué querían que…?»);
     // a follow-up in the imperfect is the natural way to keep that thread going
     const tense = plan.tense === "subj" ? "imp" : plan.tense;
-    messages.push({ role: "user", content: turnText(lastQuestion(), C.msgs[C.msgs.length - 1].x, use, tense) });
+    let messages;
+    if (llm.cloud) messages = cloudMessages(use, tense, plan);
+    else {
+      messages = [{ role: "system", content: SYSTEM }];
+      for (const [q, a, u, t, reply] of SHOTS) {
+        messages.push({ role: "user", content: turnText(q, a, u, t) });
+        messages.push({ role: "assistant", content: reply });
+      }
+      messages.push({ role: "user", content: turnText(lastQuestion(), C.msgs[C.msgs.length - 1].x, use, tense) });
+    }
     // one retry, cooler, before giving the turn to the guided tutor
     for (const temperature of [0.6, 0.3]) {
       const timer = setTimeout(() => { try { llm.engine.interruptGenerate(); } catch {} }, 45000);
@@ -483,8 +550,13 @@ const Chat = (() => {
         console.warn("pasado: unusable model reply", out);
       } catch (e) {
         console.warn("pasado: model error", e);
+        // a bad key or a spent quota won't fix itself: say so instead of retrying every turn
+        if (e && e.gemini && e.status < 500) {
+          Object.assign(llm, { state: "error", engine: null, error: describeError(e) });
+          renderStatus();
+        }
         // the GPU can be lost while the app sits in the background; reload next time
-        if (/lost|disposed|destroyed|device/i.test(String(e && e.message))) Object.assign(llm, { state: "off", engine: null });
+        else if (!llm.cloud && /lost|disposed|destroyed|device/i.test(String(e && e.message))) Object.assign(llm, { state: "off", engine: null });
         return null;
       } finally {
         clearTimeout(timer);
@@ -513,7 +585,7 @@ const Chat = (() => {
     save();
     const bubble = appendTutor("", true);
     let reply = null;
-    if (llm.state === "off" && C.model && modelByKey(C.model) && !isCrashed(C.model)) loadModel(C.model);
+    if (llm.state === "off" && aiByKey(C.model) && !isCrashed(C.model)) loadModel(C.model);
     if (llm.state === "ready") {
       reply = await llmReply(an, plan, (t) => {
         bubble.querySelector(".txt").textContent = t;
@@ -715,20 +787,29 @@ const Chat = (() => {
       <p class="sentence">Charla en pasado.</p>
       <p class="why">Lucía te pregunta por tu vida —ayer, tu infancia, tus viajes— y tú contestas en pasado.
       Si se te escapa una forma, ella la usa bien en su respuesta y debajo de tu mensaje queda una nota discreta.</p>
-      <p class="why">La IA funciona dentro de tu dispositivo: es gratis y nada sale de él. Se descarga una vez
+      <p class="why">Con una clave gratuita de Gemini, Lucía conversa mucho mejor y no hay que descargar nada.
+      La clave se crea en un minuto en <a href="${Gemini.KEY_PAGE}" target="_blank" rel="noopener">Google AI Studio</a>
+      y solo se guarda en este dispositivo; tus mensajes se envían a Google.</p>
+      <div class="row"><input id="welcomeKey" class="key" type="password" placeholder="clave de Gemini" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(Gemini.getKey())}"><button id="welcomeGemini">empezar con Gemini</button></div>
+      <p class="why">O una IA dentro de tu dispositivo: gratis, sin conexión y nada sale de él, pero se descarga una vez
       (${m.name}, ${m.size}, mejor con wifi).</p>
-      <div class="row"><button id="welcomeLLM">descargar y empezar</button><button id="welcomeGuided" class="quiet">empezar sin IA</button></div>
+      <div class="row"><button id="welcomeLLM" class="quiet">descargar y empezar</button><button id="welcomeGuided" class="quiet">empezar sin IA</button></div>
       <p class="why" id="welcomeGPU"></p>`;
     log().appendChild(el);
+    $("welcomeGemini").addEventListener("click", () => {
+      const k = $("welcomeKey").value.trim();
+      if (!k) return $("welcomeKey").focus();
+      Gemini.setKey(k);
+      start("gemini");
+    });
+    $("welcomeKey").addEventListener("keydown", (e) => { if (e.key === "Enter") $("welcomeGemini").click(); });
     $("welcomeLLM").addEventListener("click", () => start(recommended));
     $("welcomeGuided").addEventListener("click", () => start("none"));
     (gpu ? Promise.resolve(gpu) : probeGPU()).then((g) => {
       gpu = g;
       if (!g.ok) {
         $("welcomeLLM").hidden = true;
-        $("welcomeGuided").textContent = "empezar";
-        $("welcomeGuided").className = "";
-        $("welcomeGPU").textContent = "Este navegador no puede ejecutar la IA (hace falta iOS 26 o un navegador de ordenador reciente con WebGPU). Charlarás con el tutor guiado, que corrige igual.";
+        $("welcomeGPU").textContent = "Este navegador no puede ejecutar la IA en el dispositivo (hace falta iOS 26 o un navegador de ordenador reciente con WebGPU). Sin Gemini, charlarás con el tutor guiado, que corrige igual.";
       }
     });
   }
@@ -771,7 +852,7 @@ const Chat = (() => {
   }
 
   function renderMeta() {
-    const m = modelByKey(C.model);
+    const m = aiByKey(C.model);
     let who = "tutor guiado";
     if (m && llm.state === "ready") who = m.name;
     else if (m && llm.state === "loading") who = m.name + " (cargando)";
@@ -784,16 +865,18 @@ const Chat = (() => {
   function renderStatus() {
     const el = $("chatStatus");
     let html = "";
-    if (llm.state === "loading") {
+    if (llm.state === "loading" && llm.cloud) {
+      html = `<p>Conectando con Gemini…</p>`;
+    } else if (llm.state === "loading") {
       const pct = Math.round(llm.progress * 100);
       const what = llm.phase === "download" ? "Descargando la IA" : "Preparando la IA";
       html = `<p>${what}… ${pct} %</p><div class="bar"><span style="width:${pct}%"></span></div>
         <p class="why">${llm.phase === "download" ? "Solo la primera vez. Mientras tanto puedes ir charlando con el tutor guiado." : "Un momento."}</p>`;
     } else if (llm.state === "error") {
       html = `<p>${esc(llm.error)}</p><div class="row"><button data-act="retry">reintentar</button><button data-act="settings" class="quiet">ajustes</button></div>`;
-    } else if (llm.state === "nogpu" && C.model && C.model !== "none") {
+    } else if (llm.state === "nogpu" && modelByKey(C.model)) {
       html = `<p>Este navegador no puede ejecutar la IA (hace falta WebGPU: iOS 26 o un navegador de ordenador reciente). Sigues con el tutor guiado, que corrige igual.</p>`;
-    } else if (crashNotice) {
+    } else if (crashNotice && modelByKey(C.model)) {
       const m = MODELS.find((x) => x.f16 === crashNotice || x.f32 === crashNotice);
       const smaller = m && MODELS[MODELS.indexOf(m) - 1];
       html = `<p>La última vez la IA${m ? " (" + m.name + ")" : ""} no cupo en la memoria de este dispositivo y la app se reinició. Sigues con el tutor guiado.</p>
@@ -840,9 +923,19 @@ const Chat = (() => {
       return `<label class="opt"><input type="radio" name="chatModel" value="${m.key}"${C.model === m.key ? " checked" : ""}>
         <span><b>${m.name}</b> <span class="faint">${m.size}${tag}</span><br><span class="faint">${m.note}${m.key === recommended ? " · recomendado aquí" : ""}</span></span></label>`;
     }).join("");
+    const cloud = CLOUD.map((m) =>
+      `<label class="opt"><input type="radio" name="chatModel" value="${m.key}"${C.model === m.key ? " checked" : ""}>
+        <span><b>${m.name}</b><br><span class="faint">${m.note}</span></span></label>`
+    ).join("");
     el.innerHTML = `
-      <h3>IA</h3>
-      <p class="why">Funciona dentro del dispositivo: gratis y sin enviar nada. Se descarga una vez.</p>
+      <h3>IA con Gemini</h3>
+      <p class="why">Con tu clave gratuita de <a href="${Gemini.KEY_PAGE}" target="_blank" rel="noopener">Google AI Studio</a>.
+      Nada que descargar, pero necesita conexión y tus mensajes se envían a Google (con la clave gratuita, Google puede usarlos para mejorar sus productos).</p>
+      ${cloud}
+      <div class="row"><input id="chatKey" class="key" type="password" placeholder="clave de Gemini" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(Gemini.getKey())}">${Gemini.getKey() ? '<button id="chatKeyDel" class="quiet">olvidar</button>' : ""}</div>
+      <p class="why" id="chatKeyMsg" hidden></p>
+      <h3>IA en el dispositivo</h3>
+      <p class="why">Funciona dentro del dispositivo: gratis, sin conexión y sin enviar nada. Se descarga una vez.</p>
       ${opts}
       <label class="opt"><input type="radio" name="chatModel" value="none"${C.model === "none" ? " checked" : ""}>
         <span><b>Sin IA</b><br><span class="faint">tutor guiado con preguntas preparadas; corrige igual</span></span></label>
@@ -857,6 +950,13 @@ const Chat = (() => {
     $("chatModelGo").addEventListener("click", () => {
       const v = (el.querySelector('input[name="chatModel"]:checked') || {}).value;
       if (!v) return;
+      const key = $("chatKey").value.trim();
+      if (key !== Gemini.getKey()) Gemini.setKey(key);
+      if (cloudByKey(v) && !key) {
+        $("chatKeyMsg").textContent = "Pega aquí tu clave de Gemini para usarlo.";
+        $("chatKeyMsg").hidden = false;
+        return $("chatKey").focus();
+      }
       const first = C.model === null;
       C.model = v;
       save();
@@ -864,6 +964,8 @@ const Chat = (() => {
       if (v === "none") {
         if (llm.engine) llm.engine.unload().catch(() => {});
         Object.assign(llm, { state: "off", engine: null, id: null });
+      } else if (cloudByKey(v)) {
+        loadModel(v); // checks the key again, in case it changed
       } else {
         for (const m of MODELS) if (m.key === v) { delete C.crash[m.f16]; delete C.crash[m.f32]; }
         crashNotice = null;
@@ -872,6 +974,17 @@ const Chat = (() => {
       toggleSettings(false);
       renderStatus();
     });
+    if ($("chatKeyDel"))
+      $("chatKeyDel").addEventListener("click", () => {
+        Gemini.setKey("");
+        if (cloudByKey(C.model)) {
+          C.model = "none";
+          save();
+          Object.assign(llm, { state: "off", engine: null, id: null });
+          renderStatus();
+        }
+        renderSettings();
+      });
     renderStorage();
     $("optFix").addEventListener("change", (e) => { C.showFix = e.target.checked; save(); renderLog(); });
     $("optVoice").addEventListener("change", (e) => { C.voice = e.target.checked; save(); if (C.voice) unlockVoice(); });
@@ -974,7 +1087,7 @@ const Chat = (() => {
     }
     renderStatus();
     toBottom(false);
-    if (C.model && modelByKey(C.model) && llm.state === "off" && !isCrashed(C.model) && !crashNotice) loadModel(C.model);
+    if (aiByKey(C.model) && llm.state === "off" && !isCrashed(C.model) && !(crashNotice && modelByKey(C.model))) loadModel(C.model);
   }
 
   // the tense chips changed: steer away from a topic whose tense was switched off
