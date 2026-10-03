@@ -59,10 +59,17 @@ Dos piezas con papeles separados:
   conexión y los mensajes van a Google (con la clave gratuita, Google puede
   usarlos para mejorar sus productos). Hay dos opciones, *Gemini Flash* y
   *Flash-Lite*, con los alias `gemini-flash-latest` y `gemini-flash-lite-latest`,
-  que siguen a los modelos actuales de Google. Gemini recibe la conversación
-  reciente y las mismas instrucciones del turno (qué forma reformular, en qué
-  tiempo preguntar). Si la clave falla o se agota el cupo gratuito, lo dice y
-  sigue el tutor guiado.
+  que siguen a los modelos actuales de Google. Con Gemini, además, **corrige
+  como una profesora** todo el mensaje, no solo los verbos: ortografía
+  (*nevriose*), tildes (*dia*, *si* afirmativo), ser/estar, el tiempo que pide
+  el contexto (*fui muy nerviosa* → *estaba*), concordancia, palabras que
+  faltan. En una sola petición devuelve, en JSON, las correcciones (cada una con
+  su explicación), la frase entera corregida y la respuesta de Lucía, que ya
+  reformula lo corregido. Lo que el analizador da por seguro se le pasa como
+  hecho, y sus sospechas como candidatas que Gemini decide; los verbos que
+  corrige Gemini también vuelven antes en «Escribir». Si un turno falla, lo
+  contesta el tutor guiado y una nota discreta dice por qué; si la clave falla
+  o se agota el cupo gratuito, lo avisa.
   **La IA en el dispositivo**
   ([WebLLM](https://github.com/mlc-ai/web-llm) sobre WebGPU, copiada en
   `vendor/` para que funcione sin conexión). Es gratis y no envía nada a

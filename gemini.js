@@ -1,6 +1,8 @@
 /* Pasado — Gemini for «Charlar»: Google's hosted model behind the same small
    interface the chat uses for the on-device engine (WebLLM's OpenAI-style
    chat.completions.create, streaming or not), so chat.js drives both alike.
+   On top of that it takes a JSON schema (response_format), which the chat
+   uses to get corrections and the reply back together in one request.
 
    The key is her own free key from Google AI Studio. The app is a static page
    with no server of its own, so the key is kept only in this device's storage
@@ -44,6 +46,9 @@ const Gemini = (() => {
   // Replies are a sentence or two, so thinking only adds waiting. A model that
   // can't switch it off rejects the setting; from then on it is left out.
   let noThinking = true;
+  // likewise a schema the API won't take: JSON is still asked for, and the
+  // prompt names the fields
+  let useSchema = true;
 
   async function request(model, key, opts, stream, signal) {
     const { system, contents } = toGemini(opts.messages);
@@ -53,12 +58,14 @@ const Gemini = (() => {
         temperature: opts.temperature,
         topP: opts.top_p,
         // thinking, where a model does it anyway, counts against this limit, so
-        // it is generous: the stop sequence and the chat cut the reply short
-        maxOutputTokens: 1024,
+        // it is generous: the reply itself is a sentence or two
+        maxOutputTokens: 2048,
         stopSequences: opts.stop,
         ...(noThinking ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
       },
     };
+    const schema = opts.response_format && opts.response_format.schema;
+    if (schema) Object.assign(body.generationConfig, { responseMimeType: "application/json" }, useSchema ? { responseSchema: schema } : {});
     if (system) body.systemInstruction = { parts: [{ text: system }] };
     const url = API + encodeURIComponent(model) + (stream ? ":streamGenerateContent?alt=sse" : ":generateContent");
     const res = await fetch(url, {
@@ -72,6 +79,10 @@ const Gemini = (() => {
     try { err = (await res.json()).error; } catch {}
     if (res.status === 400 && noThinking && /thinking/i.test((err && err.message) || "")) {
       noThinking = false;
+      return request(model, key, opts, stream, signal);
+    }
+    if (res.status === 400 && schema && useSchema && /schema|propertyOrdering|Invalid JSON payload/i.test((err && err.message) || "")) {
+      useSchema = false;
       return request(model, key, opts, stream, signal);
     }
     throw apiError(res.status, err);
@@ -116,7 +127,13 @@ const Gemini = (() => {
           async create(opts) {
             ctrl = new AbortController();
             const res = await request(model, key, opts, !!opts.stream, ctrl.signal);
-            if (!opts.stream) return { choices: [{ message: { content: textOf(await res.json()) } }] };
+            if (!opts.stream) {
+              const data = await res.json();
+              const c = data.candidates && data.candidates[0];
+              return {
+                choices: [{ message: { content: textOf(data) }, finish_reason: (c && c.finishReason) || (data.promptFeedback && data.promptFeedback.blockReason) || "" }],
+              };
+            }
             return (async function* () {
               try {
                 for await (const data of events(res)) yield { choices: [{ delta: { content: textOf(data) } }] };

@@ -392,3 +392,6 @@ button.quiet { color: var(--faint); border-color: var(--faint); }
 }
 .key::placeholder { color: var(--faint); opacity: 0.7; }
 #tab-chat a { color: inherit; }
+.note.whole { text-decoration: underline; text-decoration-color: var(--faint); text-underline-offset: 3px; }
+#tab-chat .fullfix { color: var(--ok); font-family: Georgia, serif; font-size: 0.95rem; }
+#tab-chat .fallback { align-self: flex-start; margin-top: -0.7rem; padding-left: 0.85rem; font-size: 0.72rem; }

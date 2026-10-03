@@ -442,26 +442,152 @@ const Chat = (() => {
       "¡Qué independiente! ¿Y ya habías estado fuera de España antes de eso?"],
   ];
 
-  /* Gemini doesn't need examples: it reads the conversation itself, and the
-     plan for this turn comes as instructions. */
-  const CLOUD_SYSTEM =
-    "Eres Lucía, una amiga española que charla por chat con una chica que está aprendiendo español y practica los tiempos del pasado. " +
-    "Escribe en español de España, natural y cercano, como en un chat entre amigas: una reacción corta a lo que ella acaba de decir y una sola pregunta sobre eso mismo que la invite a contar más. " +
-    "Como mucho dos frases, en una sola línea, sin emojis ni listas. " +
-    "Nunca la corrijas ni hables de gramática: si se equivoca en una forma, tú la usas bien en tu respuesta, con naturalidad.";
+  /* Gemini is a teacher as well as a partner to chat with. The analyzer only
+     knows verb forms; Gemini reads the whole message — spelling, accents,
+     ser/estar, which past tense fits, agreement, missing words — so one
+     request returns both her corrections and Lucía's reply, as JSON. The
+     reply is written after the corrections, so it can recast what was fixed.
+     What the analyzer is sure of goes in as a given, so the two never
+     disagree; its soft hints go in as candidates for Gemini to judge. */
+  const CLOUD_SYSTEM = `Eres Lucía, una profesora de español de España que charla por chat con una alumna que está aprendiendo español y practica los tiempos del pasado. En cada turno haces dos cosas.
 
-  function cloudMessages(use, tense, plan) {
+1. Corriges su ÚLTIMO mensaje como una buena profesora: todos los errores reales, no solo los verbos.
+- Ortografía («nevriose» → «nerviosa», «empiecan» → «empezaban») y tildes («dia» → «día», «si» afirmativo → «sí», «tambien» → «también»).
+- Conjugación y elección de tiempo. Las descripciones, los estados, los sentimientos y lo que estaba en curso van en imperfecto («Fui muy nerviosa» → «Estaba muy nerviosa», «y esperando» → «y estaba esperando»); las acciones terminadas, en indefinido. Que la frase sea coherente con el momento del que habla.
+- Ser o estar, género y número, preposiciones, palabras que faltan o sobran, calcos de otras lenguas.
+No corrijas mayúsculas ni puntuación, ni cambies lo que ya es correcto aunque pudiera decirse de otra manera. Si el mensaje está bien, no hay correcciones.
+Cada corrección: «original» es el fragmento tal cual lo escribió ella, copiado letra a letra, con las menos palabras posibles pero que no se repita en el mensaje; «corregido» es lo que va en su lugar; «explicacion» es una frase corta y sencilla, en español, que diga por qué; si es un verbo, «verbo» es su infinitivo y «tiempo» el tiempo de la forma correcta. Van en el orden en que aparecen. «frase_corregida» es su mensaje entero ya corregido.
+
+2. Le contestas («respuesta») como en un chat entre amigas, en español de España, natural y cercano: una reacción corta a lo que te ha contado y una sola pregunta sobre eso mismo que la invite a contar más. Como mucho dos frases, sin emojis. Nunca hables de sus errores ni de gramática en la respuesta: si se equivocó, usa tú la forma correcta con naturalidad.
+
+Contesta solo con un objeto JSON con «correcciones» (la lista), «frase_corregida» y «respuesta».`;
+
+  const AI_TENSE = { indefinido: "pret", imperfecto: "imp", perfecto: "perf", pluscuamperfecto: "plusc", subjuntivo: "subj" };
+  const S_STR = { type: "STRING" };
+  const CLOUD_SCHEMA = {
+    type: "OBJECT",
+    properties: {
+      correcciones: {
+        type: "ARRAY",
+        items: {
+          type: "OBJECT",
+          properties: {
+            original: S_STR,
+            corregido: S_STR,
+            explicacion: S_STR,
+            verbo: S_STR,
+            tiempo: { type: "STRING", enum: [...Object.keys(AI_TENSE), "presente", "otro"] },
+          },
+          required: ["original", "corregido", "explicacion"],
+          propertyOrdering: ["original", "corregido", "explicacion", "verbo", "tiempo"],
+        },
+      },
+      frase_corregida: S_STR,
+      respuesta: S_STR,
+    },
+    required: ["correcciones", "frase_corregida", "respuesta"],
+    propertyOrdering: ["correcciones", "frase_corregida", "respuesta"],
+  };
+
+  function cloudMessages(an, use, tense, plan) {
+    const fx = (f) => `«${f.text}» → «${f.fix}»`;
+    const sure = an.findings.filter((f) => f.sure);
+    const soft = an.findings.filter((f) => !f.sure);
     const turn = [
+      sure.length ? `El corrector automático ya ha comprobado estos errores, inclúyelos: ${sure.map(fx).join(", ")}.` : "",
+      soft.length ? `El corrector automático sospecha esto, decide tú si es un error: ${soft.map(fx).join(", ")}.` : "",
       use ? `En tu respuesta usa la forma «${use}».` : "",
       plan.switched
-        ? "Esta vez no hagas ninguna pregunta: solo reacciona a lo que ha dicho, porque después vais a cambiar de tema."
+        ? "Esta vez la respuesta no lleva ninguna pregunta: solo reacciona a lo que ha dicho, porque después vais a cambiar de tema."
         : plan.thin && plan.prepared
           ? `Ha contestado muy poco: sigue con esta pregunta, o con una parecida: ${plan.prepared}`
           : `Haz la pregunta en pretérito ${TENSE_WORD[tense]}, para que ella conteste en ese tiempo.`,
-    ].filter(Boolean).join(" ");
-    const messages = [{ role: "system", content: CLOUD_SYSTEM + "\n\nEn esta respuesta: " + turn }];
+    ].filter(Boolean).join("\n");
+    const messages = [{ role: "system", content: CLOUD_SYSTEM + "\n\nEn este turno:\n" + turn }];
     for (const m of C.msgs.slice(-16)) messages.push({ role: m.r === "u" ? "user" : "assistant", content: m.x });
     return messages;
+  }
+
+  // the reply part of Gemini's answer; the corrections are checked where they're placed
+  function cleanCloudReply(raw, plan) {
+    let s = (raw || "").replace(/[*_#`]/g, "").replace(/^\s*lucía\s*:\s*/i, "").replace(/\s+/g, " ").trim();
+    if (!s || NOT_SPANISH.test(s) || REFUSAL.test(s)) return null;
+    if (plan.switched) {
+      const said = (s.match(/[^.!?…]+[.!?…]+|[^.!?…]+$/g) || [s]).map((x) => x.trim()).filter((x) => x && !x.endsWith("?"));
+      s = [...(said.length ? said.slice(0, 2) : [pick(ACKS)]), "Oye, cambiando de tema:", plan.prepared].join(" ");
+    }
+    return Analyzer.repair(s);
+  }
+
+  // one turn with Gemini: {reply, ai: {fx, full}}, or {fail: why} for the guided tutor to take over
+  async function cloudTurn(an, plan) {
+    const f = recastable(an);
+    const use = f && f.kind !== "accent" ? echoForm(f) : null;
+    const tense = plan.tense === "subj" ? "imp" : plan.tense;
+    const messages = cloudMessages(an, use, tense, plan);
+    let fail = "";
+    // one retry, cooler, before giving the turn to the guided tutor
+    for (const temperature of [0.5, 0.2]) {
+      const engine = llm.engine;
+      const timer = setTimeout(() => { try { engine.interruptGenerate(); } catch {} }, 30000);
+      try {
+        const res = await engine.chat.completions.create({ messages, temperature, response_format: { type: "json_schema", schema: CLOUD_SCHEMA } });
+        const choice = res.choices[0];
+        let out = null;
+        try { out = JSON.parse(choice.message.content); } catch {}
+        const reply = out && cleanCloudReply(out.respuesta, plan);
+        if (reply) {
+          const fx = (Array.isArray(out.correcciones) ? out.correcciones : []).map((x) => ({
+            o: String(x.original || ""), c: String(x.corregido || ""), why: String(x.explicacion || ""),
+            v: String(x.verbo || "").toLowerCase().trim(), t: AI_TENSE[x.tiempo] || "",
+          }));
+          return { reply, ai: { fx, full: String(out.frase_corregida || "") } };
+        }
+        fail = choice.finish_reason && choice.finish_reason !== "STOP" ? `respuesta cortada (${choice.finish_reason})` : "respuesta inservible";
+        console.warn("pasado: unusable Gemini answer", choice);
+      } catch (e) {
+        console.warn("pasado: Gemini error", e);
+        if (e && e.name === "AbortError") return { fail: "tardó demasiado" };
+        fail = describeError(e);
+        // a bad key or a spent quota won't fix itself: say so instead of retrying every turn
+        if (e && e.gemini && e.status < 500) {
+          Object.assign(llm, { state: "error", engine: null, error: fail });
+          renderStatus();
+        }
+        return { fail };
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+    return { fail };
+  }
+
+  /* Gemini's corrections, placed in her text. Each one is looked for after the
+     previous one, so a word she used twice is marked where it was wrong; one
+     that can't be found stays in the whole corrected sentence. Where the
+     analyzer is sure, it wins; its soft hints were Gemini's to judge, so they
+     give way. */
+  const sameText = (a, b) => normQ(a) === normQ(b);
+  function withAI(an, text, ai) {
+    if (!ai) return an;
+    const lower = text.toLowerCase();
+    const sure = an.findings.filter((f) => f.sure);
+    const extra = [];
+    let from = 0;
+    for (const x of ai.fx || []) {
+      if (!x.o || !x.c || x.o === x.c) continue;
+      const o = x.o.toLowerCase();
+      let i = lower.indexOf(o, from);
+      if (i < 0) i = lower.indexOf(o);
+      if (i < 0) continue;
+      const f = { kind: "ai", start: i, end: i + x.o.length, text: text.slice(i, i + x.o.length), fix: x.c, why: x.why, v: x.v, t: x.t, sure: true, ai: true };
+      if ([...sure, ...extra].some((g) => g.start < f.end && f.start < g.end)) continue;
+      extra.push(f);
+      from = f.end;
+    }
+    const findings = [...sure, ...extra].sort((a, b) => a.start - b.start);
+    const full = ai.full && findings.length && !sameText(ai.full, text) ? ai.full : "";
+    return { ...an, findings, full, aiFound: extra };
   }
 
   // the last question Lucía asked, to frame her answer
@@ -517,16 +643,12 @@ const Chat = (() => {
     // the subjunctive comes from the topic's own questions («¿Qué querían que…?»);
     // a follow-up in the imperfect is the natural way to keep that thread going
     const tense = plan.tense === "subj" ? "imp" : plan.tense;
-    let messages;
-    if (llm.cloud) messages = cloudMessages(use, tense, plan);
-    else {
-      messages = [{ role: "system", content: SYSTEM }];
-      for (const [q, a, u, t, reply] of SHOTS) {
-        messages.push({ role: "user", content: turnText(q, a, u, t) });
-        messages.push({ role: "assistant", content: reply });
-      }
-      messages.push({ role: "user", content: turnText(lastQuestion(), C.msgs[C.msgs.length - 1].x, use, tense) });
+    const messages = [{ role: "system", content: SYSTEM }];
+    for (const [q, a, u, t, reply] of SHOTS) {
+      messages.push({ role: "user", content: turnText(q, a, u, t) });
+      messages.push({ role: "assistant", content: reply });
     }
+    messages.push({ role: "user", content: turnText(lastQuestion(), C.msgs[C.msgs.length - 1].x, use, tense) });
     // one retry, cooler, before giving the turn to the guided tutor
     for (const temperature of [0.6, 0.3]) {
       const timer = setTimeout(() => { try { llm.engine.interruptGenerate(); } catch {} }, 45000);
@@ -550,13 +672,8 @@ const Chat = (() => {
         console.warn("pasado: unusable model reply", out);
       } catch (e) {
         console.warn("pasado: model error", e);
-        // a bad key or a spent quota won't fix itself: say so instead of retrying every turn
-        if (e && e.gemini && e.status < 500) {
-          Object.assign(llm, { state: "error", engine: null, error: describeError(e) });
-          renderStatus();
-        }
         // the GPU can be lost while the app sits in the background; reload next time
-        else if (!llm.cloud && /lost|disposed|destroyed|device/i.test(String(e && e.message))) Object.assign(llm, { state: "off", engine: null });
+        if (/lost|disposed|destroyed|device/i.test(String(e && e.message))) Object.assign(llm, { state: "off", engine: null });
         return null;
       } finally {
         clearTimeout(timer);
@@ -577,16 +694,28 @@ const Chat = (() => {
     unlockVoice();
 
     pushMsg("u", text);
+    const mine = C.msgs[C.msgs.length - 1];
     const an = analyzeReply(text, lastQuestion());
     learnFrom(an);
-    appendUser(text, an);
+    const ububble = appendUser(text, an);
 
     const plan = planTurn(an);
     save();
     const bubble = appendTutor("", true);
     let reply = null;
+    let fail = "";
     if (llm.state === "off" && aiByKey(C.model) && !isCrashed(C.model)) loadModel(C.model);
-    if (llm.state === "ready") {
+    if (llm.state === "ready" && llm.cloud) {
+      const r = await cloudTurn(an, plan);
+      if (r.reply) {
+        reply = r.reply;
+        mine.ai = r.ai;
+        const full = withAI(an, text, r.ai);
+        learnFromAI(full.aiFound);
+        ububble.innerHTML = userHTML(text, full);
+        save();
+      } else fail = r.fail;
+    } else if (llm.state === "ready") {
       reply = await llmReply(an, plan, (t) => {
         bubble.querySelector(".txt").textContent = t;
         bubble.classList.remove("typing");
@@ -597,6 +726,8 @@ const Chat = (() => {
     }
     if (!reply) reply = guidedReply(an, plan);
     finishTutor(bubble, reply);
+    // say when Gemini was meant to answer and didn't, so a canned reply isn't taken for it
+    if (fail) bubble.insertAdjacentHTML("afterend", `<p class="why fallback">tutor guiado · Gemini: ${esc(fail)}</p>`);
     pushMsg("t", reply);
     renderTopic();
     renderMeta();
@@ -624,18 +755,26 @@ const Chat = (() => {
     C.stats.past += an.uses.length;
     const sure = an.findings.filter((f) => f.sure && f.kind !== "accent");
     C.stats.fixes += sure.length;
-    for (const f of sure) {
-      const t = f.t === "part" ? "perf" : f.t;
-      if (TENSES.includes(t)) C.err[t] = (C.err[t] || 0) + 1;
-      let keys = SENTENCES.map((s, i) => (s.v === f.v && s.t === t ? i : -1)).filter((i) => i >= 0);
-      if (!keys.length) keys = SENTENCES.map((s, i) => (s.v === f.v ? i : -1)).filter((i) => i >= 0);
-      for (const i of keys.slice(0, 3)) {
-        const rec = S.esc[i] || (S.esc[i] = { box: 0, due: 0 });
-        rec.due = Math.min(rec.due, now());
-      }
-    }
+    for (const f of sure) drillAgain(f.v, f.t === "part" ? "perf" : f.t);
     // mistakes fade: a tense used well slowly stops being pushed
     for (const u of an.uses) if (C.err[u.t] && !sure.some((f) => f.t === u.t)) C.err[u.t] = Math.max(0, C.err[u.t] - 0.25);
+  }
+
+  function drillAgain(v, t) {
+    if (TENSES.includes(t)) C.err[t] = (C.err[t] || 0) + 1;
+    if (!v) return;
+    let keys = SENTENCES.map((s, i) => (s.v === v && s.t === t ? i : -1)).filter((i) => i >= 0);
+    if (!keys.length) keys = SENTENCES.map((s, i) => (s.v === v ? i : -1)).filter((i) => i >= 0);
+    for (const i of keys.slice(0, 3)) {
+      const rec = S.esc[i] || (S.esc[i] = { box: 0, due: 0 });
+      rec.due = Math.min(rec.due, now());
+    }
+  }
+
+  // what Gemini found beyond the analyzer counts too; its verb slips feed the drills alike
+  function learnFromAI(found) {
+    C.stats.fixes += found.length;
+    for (const f of found) if (f.v || f.t) drillAgain(f.v, f.t);
   }
 
   /* ---------- rendering ---------- */
@@ -663,9 +802,13 @@ const Chat = (() => {
 
   // her message, with the past forms underlined and the slips marked
   function markup(text, an) {
+    const fx = an.findings.map((f) => ({ s: f.start, e: f.end, cls: f.sure ? "fx" : "fx soft" }));
     const marks = [
-      ...an.findings.map((f) => ({ s: f.start, e: f.end, cls: f.sure ? "fx" : "fx soft" })),
-      ...an.uses.filter((u) => !u.fixed).map((u) => ({ s: u.start, e: u.end, cls: "pv", title: TENSE_SHORT[u.t] })),
+      ...fx,
+      // a past form inside a corrected stretch is part of the correction
+      ...an.uses
+        .filter((u) => !u.fixed && !fx.some((m) => m.s < u.end && u.start < m.e))
+        .map((u) => ({ s: u.start, e: u.end, cls: "pv", title: TENSE_SHORT[u.t] })),
     ].sort((a, b) => a.s - b.s);
     let html = "";
     let at = 0;
@@ -700,6 +843,7 @@ const Chat = (() => {
   };
 
   function explain(f) {
+    if (f.ai) return f.why;
     const v = VMAP[f.v];
     const note = (KIND_NOTE[f.kind] || (() => ""))(f);
     let how = "";
@@ -720,7 +864,8 @@ const Chat = (() => {
         return `<button class="note${f.sure ? "" : " soft"}" data-i="${i}">${body}</button>` +
           `<p class="why" data-for="${i}" hidden>${esc(explain(f))}</p>`;
       })
-      .join("");
+      .join("") +
+      (an.full ? `<button class="note whole" data-i="full">frase corregida</button><p class="why fullfix" data-for="full" hidden>${esc(an.full)}</p>` : "");
     const tenses = an.tenses.map((t) => TENSE_SHORT[t]).join(" · ");
     const used = tenses ? `<span class="used">${tenses}</span>` : "";
     if (!fixes) return `<div class="notes">${used}</div>`;
@@ -729,10 +874,12 @@ const Chat = (() => {
       : `<div class="notes"><button class="dot" aria-label="ver correcciones">•</button><div class="more" hidden>${fixes}</div>${used}</div>`;
   }
 
+  const userHTML = (text, an) => `<p class="txt">${markup(text, an)}</p>${annotations(an)}`;
+
   function appendUser(text, an) {
     const el = document.createElement("div");
     el.className = "msg u";
-    el.innerHTML = `<p class="txt">${markup(text, an)}</p>${annotations(an)}`;
+    el.innerHTML = userHTML(text, an);
     log().appendChild(el);
     keepInView();
     return el;
@@ -770,7 +917,7 @@ const Chat = (() => {
     if (C.model === null) return renderWelcome();
     let q = "";
     for (const m of C.msgs) {
-      if (m.r === "u") appendUser(m.x, analyzeReply(m.x, q));
+      if (m.r === "u") appendUser(m.x, withAI(analyzeReply(m.x, q), m.x, m.ai));
       else {
         appendTutor(m.x);
         const qs = m.x.match(/¿[^?]*\?/g);
