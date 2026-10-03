@@ -51,56 +51,36 @@ Dos piezas con papeles separados:
   («¿quizá…?») el imperfecto cuando la pregunta era sobre costumbres y contestas
   con un indefinido (*¿Qué hacías?* — *hice castillos*), o el pasado cuando
   cuentas en presente algo de «ayer».
-- **Quién habla: Gemini o una IA pequeña en el propio dispositivo.**
-  **Gemini** (`gemini.js`) usa tu propia clave gratuita de
-  [Google AI Studio](https://aistudio.google.com/apikey): se pega una vez en la
-  bienvenida o en «ajustes» y solo se guarda en ese dispositivo (aparte del
-  progreso). No hay que descargar nada y conversa mucho mejor, pero necesita
-  conexión y los mensajes van a Google (con la clave gratuita, Google puede
-  usarlos para mejorar sus productos). Hay dos opciones, *Gemini Flash* y
-  *Flash-Lite*, con los alias `gemini-flash-latest` y `gemini-flash-lite-latest`,
-  que siguen a los modelos actuales de Google. Con Gemini, además, **corrige
-  como una profesora** todo el mensaje, no solo los verbos: ortografía
-  (*nevriose*), tildes (*dia*, *si* afirmativo), ser/estar, el tiempo que pide
-  el contexto (*fui muy nerviosa* → *estaba*), concordancia, palabras que
-  faltan. En una sola petición devuelve, en JSON, las correcciones (cada una con
-  su explicación), la frase entera corregida y la respuesta de Lucía, que ya
-  reformula lo corregido. Lo que el analizador da por seguro se le pasa como
-  hecho, y sus sospechas como candidatas que Gemini decide; los verbos que
-  corrige Gemini también vuelven antes en «Escribir». Si un turno falla, lo
-  contesta el tutor guiado y una nota discreta dice por qué; si la clave falla
-  o se agota el cupo gratuito, lo avisa.
-  **La IA en el dispositivo**
-  ([WebLLM](https://github.com/mlc-ai/web-llm) sobre WebGPU, copiada en
-  `vendor/` para que funcione sin conexión). Es gratis y no envía nada a
-  ningún servidor. Recibe en cada turno qué forma debe reformular y hacia qué
-  tiempo llevar la siguiente pregunta, así que solo tiene que charlar. Si
-  escribe una forma mal, el analizador la arregla antes de mostrarla.
+- **Quién corrige el resto y habla: Gemini** (`gemini.js`), con tu propia
+  clave gratuita de [Google AI Studio](https://aistudio.google.com/apikey). Se
+  pega una vez en la bienvenida o en «ajustes» y solo se guarda en ese
+  dispositivo (aparte del progreso). Necesita conexión y los mensajes van a
+  Google (con la clave gratuita, Google puede usarlos para mejorar sus
+  productos). Hay dos opciones, *Gemini Flash* y *Flash-Lite*, con los alias
+  `gemini-flash-latest` y `gemini-flash-lite-latest`, que siguen a los modelos
+  actuales de Google; cada uno tiene su propio cupo gratuito.
+  Gemini **corrige como una profesora** todo el mensaje, no solo los verbos:
+  ortografía (*nevriose*), tildes (*dia*, *si* afirmativo), ser/estar, el
+  tiempo que pide el contexto (*fui muy nerviosa* → *estaba*), concordancia,
+  palabras que faltan. En una sola petición devuelve, en JSON, las correcciones
+  (cada una con su explicación), la frase entera corregida y la respuesta de
+  Lucía, que ya reformula lo corregido. Lo que el analizador da por seguro se
+  le pasa como hecho, y sus sospechas como candidatas que Gemini decide; los
+  verbos que corrige Gemini también vuelven antes en «Escribir».
 
-| Modelo | Descarga | Para |
-| --- | --- | --- |
-| Llama 3.2 · 1B | ≈ 0,7 GB | móviles con poca memoria |
-| Qwen 2.5 · 1,5B | ≈ 1 GB | móvil (recomendado) |
-| Qwen 2.5 · 3B | ≈ 1,8 GB | ordenador (recomendado) |
+**Si Gemini no contesta** (sin conexión, clave no válida, cupo agotado,
+tarda demasiado o da una respuesta inservible), la charla sigue con el **tutor
+guiado** de preguntas preparadas, que solo corrige los verbos, y se avisa
+claramente: bajo esa respuesta aparece en rojo «Gemini no ha contestado», el
+motivo y un botón para preguntárselo otra vez a Gemini, que sustituye la
+respuesta del tutor guiado. Si el problema sigue (la clave, el cupo), un aviso
+encima de la charla lo explica con «reintentar» y «ajustes». Sin clave se
+puede charlar solo con el tutor guiado.
 
-Los modelos tan pequeños siguen mejor ejemplos que reglas: el prompt son unos
-pocos intercambios de muestra con el mismo formato que el turno actual. Las
-respuestas inservibles (en otro idioma, una negativa, repetir la pregunta
-anterior) se descartan y ese turno lo contesta el tutor guiado.
-
-Se descarga una vez (mejor con wifi) y se guarda en los datos de la app, así
-que ocupa espacio del móvil. En «ajustes» → «Espacio» aparece cada modelo
-guardado con lo que ocupa —también los que la app ya no ofrece— y se puede
-borrar uno a uno o todos; cambiar de modelo no borra el anterior. Sin IA —si el navegador no tiene WebGPU o
-el modelo no cabe— la charla sigue con un **tutor guiado** de preguntas
-preparadas, que corrige exactamente igual.
-
-**En iPhone** hace falta iOS 26 (WebGPU). iOS limita mucho la memoria de una
-web: en un iPhone con 4 GB (iPhone 11) el modelo puede no caber. Si la app se
-reinicia mientras carga la IA, la siguiente vez lo detecta, sigue con el tutor
-guiado y ofrece el modelo más pequeño. En el ordenador (Chrome, Edge o Safari
-recientes) funciona sin problemas con la misma dirección. Para dictar, usa el
-micrófono del teclado; las respuestas se pueden escuchar en voz alta.
+Antes la charla usaba IAs pequeñas descargadas en el dispositivo (WebLLM); al
+actualizar, la app borra esos modelos para liberar el espacio que ocupaban.
+Para dictar, usa el micrófono del teclado; las respuestas se pueden escuchar
+en voz alta.
 
 ## Pruebas
 

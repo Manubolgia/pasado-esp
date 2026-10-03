@@ -279,21 +279,9 @@ button.quiet { color: var(--faint); border-color: var(--faint); }
   margin-bottom: 1.2rem;
   font-size: 0.9rem;
 }
-.bar { height: 2px; background: var(--faint); margin-top: 0.5rem; opacity: 0.6; }
-.bar span { display: block; height: 100%; background: var(--ink); transition: width 0.3s; }
 
 .welcome p + p { margin-top: 0.7rem; }
 
-.store-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
-  margin: 0.6rem 0;
-  line-height: 1.4;
-}
-.store-row .faint { font-size: 0.82rem; }
-.store-row button { flex: none; font-size: 0.85rem; padding: 0.25rem 0.7rem; }
 
 .chat-log {
   display: flex;
@@ -394,4 +382,16 @@ button.quiet { color: var(--faint); border-color: var(--faint); }
 #tab-chat a { color: inherit; }
 .note.whole { text-decoration: underline; text-decoration-color: var(--faint); text-underline-offset: 3px; }
 #tab-chat .fullfix { color: var(--ok); font-family: Georgia, serif; font-size: 0.95rem; }
-#tab-chat .fallback { align-self: flex-start; margin-top: -0.7rem; padding-left: 0.85rem; font-size: 0.72rem; }
+.fallback {
+  align-self: flex-start;
+  max-width: 90%;
+  margin-top: -0.4rem;
+  border-left: 2px solid var(--bad);
+  padding: 0.1rem 0 0.1rem 0.8rem;
+  font-size: 0.85rem;
+}
+.fallback b { color: var(--bad); font-weight: 600; }
+.fallback p + p { color: var(--faint); margin-top: 0.15rem; }
+.fallback button { margin-top: 0.5rem; font-size: 0.85rem; padding: 0.25rem 0.7rem; }
+.chat-status.warn { border-color: var(--bad); }
+.chat-status.warn b { color: var(--bad); font-weight: 600; }

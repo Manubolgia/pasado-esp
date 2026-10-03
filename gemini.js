@@ -1,8 +1,7 @@
 /* Pasado — Gemini for «Charlar»: Google's hosted model behind the same small
-   interface the chat uses for the on-device engine (WebLLM's OpenAI-style
-   chat.completions.create, streaming or not), so chat.js drives both alike.
-   On top of that it takes a JSON schema (response_format), which the chat
-   uses to get corrections and the reply back together in one request.
+   OpenAI-style interface (chat.completions.create with role/content
+   messages). It takes a JSON schema (response_format), which the chat uses
+   to get corrections and the reply back together in one request.
 
    The key is her own free key from Google AI Studio. The app is a static page
    with no server of its own, so the key is kept only in this device's storage
@@ -50,7 +49,7 @@ const Gemini = (() => {
   // prompt names the fields
   let useSchema = true;
 
-  async function request(model, key, opts, stream, signal) {
+  async function request(model, key, opts, signal) {
     const { system, contents } = toGemini(opts.messages);
     const body = {
       contents,
@@ -67,7 +66,7 @@ const Gemini = (() => {
     const schema = opts.response_format && opts.response_format.schema;
     if (schema) Object.assign(body.generationConfig, { responseMimeType: "application/json" }, useSchema ? { responseSchema: schema } : {});
     if (system) body.systemInstruction = { parts: [{ text: system }] };
-    const url = API + encodeURIComponent(model) + (stream ? ":streamGenerateContent?alt=sse" : ":generateContent");
+    const url = API + encodeURIComponent(model) + ":generateContent";
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": key },
@@ -79,11 +78,11 @@ const Gemini = (() => {
     try { err = (await res.json()).error; } catch {}
     if (res.status === 400 && noThinking && /thinking/i.test((err && err.message) || "")) {
       noThinking = false;
-      return request(model, key, opts, stream, signal);
+      return request(model, key, opts, signal);
     }
     if (res.status === 400 && schema && useSchema && /schema|propertyOrdering|Invalid JSON payload/i.test((err && err.message) || "")) {
       useSchema = false;
-      return request(model, key, opts, stream, signal);
+      return request(model, key, opts, signal);
     }
     throw apiError(res.status, err);
   }
@@ -94,31 +93,6 @@ const Gemini = (() => {
     return ((c && c.content && c.content.parts) || []).filter((p) => !p.thought).map((p) => p.text || "").join("");
   };
 
-  // server-sent events: one JSON object per «data:» line
-  async function* events(res) {
-    const reader = res.body.getReader();
-    const dec = new TextDecoder();
-    let buf = "";
-    const parse = (line) => {
-      line = line.trim();
-      if (!line.startsWith("data:")) return null;
-      try { return JSON.parse(line.slice(5)); } catch { return null; }
-    };
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buf += dec.decode(value, { stream: true });
-      let i;
-      while ((i = buf.indexOf("\n")) >= 0) {
-        const data = parse(buf.slice(0, i));
-        buf = buf.slice(i + 1);
-        if (data) yield data;
-      }
-    }
-    const data = parse(buf);
-    if (data) yield data;
-  }
-
   function engine(model, key) {
     let ctrl = null;
     return {
@@ -126,27 +100,16 @@ const Gemini = (() => {
         completions: {
           async create(opts) {
             ctrl = new AbortController();
-            const res = await request(model, key, opts, !!opts.stream, ctrl.signal);
-            if (!opts.stream) {
-              const data = await res.json();
-              const c = data.candidates && data.candidates[0];
-              return {
-                choices: [{ message: { content: textOf(data) }, finish_reason: (c && c.finishReason) || (data.promptFeedback && data.promptFeedback.blockReason) || "" }],
-              };
-            }
-            return (async function* () {
-              try {
-                for await (const data of events(res)) yield { choices: [{ delta: { content: textOf(data) } }] };
-              } catch (e) {
-                // interrupted: end the reply where it got to, as WebLLM does
-                if (!e || e.name !== "AbortError") throw e;
-              }
-            })();
+            const res = await request(model, key, opts, ctrl.signal);
+            const data = await res.json();
+            const c = data.candidates && data.candidates[0];
+            return {
+              choices: [{ message: { content: textOf(data) }, finish_reason: (c && c.finishReason) || (data.promptFeedback && data.promptFeedback.blockReason) || "" }],
+            };
           },
         },
       },
       interruptGenerate() { if (ctrl) ctrl.abort(); },
-      async unload() { if (ctrl) ctrl.abort(); },
     };
   }
 
@@ -161,7 +124,7 @@ const Gemini = (() => {
     if (/location|region|country/i.test(msg)) return "Gemini no está disponible gratis desde aquí (país o región).";
     if (e.status === 403) return "Esa clave no tiene permiso para usar Gemini. Crea otra en AI Studio.";
     if (e.status === 404) return "Google ya no ofrece ese modelo de Gemini. Elige otro en ajustes.";
-    if (e.status === 429) return "Se ha agotado por ahora el uso gratuito de Gemini. Prueba más tarde u otro modelo; mientras, sigue el tutor guiado.";
+    if (e.status === 429) return "Se ha agotado por ahora el uso gratuito de Gemini. Prueba más tarde, o cambia a Flash-Lite en ajustes.";
     if (e.status >= 500) return "Gemini no responde ahora mismo. Vuelve a intentarlo en un rato.";
     return "Gemini no ha podido contestar (" + msg.slice(0, 120) + ").";
   }
