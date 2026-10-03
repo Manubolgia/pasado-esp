@@ -68,6 +68,10 @@ Dos piezas con papeles separados:
   le pasa como hecho, y sus sospechas como candidatas que Gemini decide; los
   verbos que corrige Gemini también vuelven antes en «Escribir».
 
+Si Google falla en un turno (un error 5xx, casi siempre saturación), la app
+lo vuelve a pedir un momento después sin esquema JSON, y luego al otro modelo
+Flash; si a uno se le acaba el cupo gratuito, pasa directamente al otro.
+
 **Si Gemini no contesta** (sin conexión, clave no válida, cupo agotado,
 tarda demasiado o da una respuesta inservible), la charla sigue con el **tutor
 guiado** de preguntas preparadas, que solo corrige los verbos, y se avisa

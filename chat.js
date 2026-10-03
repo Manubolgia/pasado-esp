@@ -197,13 +197,14 @@ const Chat = (() => {
 - Conjugación y elección de tiempo. Las descripciones, los estados, los sentimientos y lo que estaba en curso van en imperfecto («Fui muy nerviosa» → «Estaba muy nerviosa», «y esperando» → «y estaba esperando»); las acciones terminadas, en indefinido. Que la frase sea coherente con el momento del que habla.
 - Ser o estar, género y número, preposiciones, palabras que faltan o sobran, calcos de otras lenguas.
 No corrijas mayúsculas ni puntuación, ni cambies lo que ya es correcto aunque pudiera decirse de otra manera. Si el mensaje está bien, no hay correcciones.
-Cada corrección: «original» es el fragmento tal cual lo escribió ella, copiado letra a letra, con las menos palabras posibles pero que no se repita en el mensaje; «corregido» es lo que va en su lugar; «explicacion» es una frase corta y sencilla, en español, que diga por qué; si es un verbo, «verbo» es su infinitivo y «tiempo» el tiempo de la forma correcta. Van en el orden en que aparecen. «frase_corregida» es su mensaje entero ya corregido.
+Cada corrección: «original» es el fragmento tal cual lo escribió ella, copiado letra a letra, con las menos palabras posibles pero que no se repita en el mensaje; «corregido» es lo que va en su lugar; «explicacion» es una frase corta y sencilla, en español, que diga por qué; si es un verbo, «verbo» es su infinitivo y «tiempo» el tiempo de la forma correcta (indefinido, imperfecto, perfecto, pluscuamperfecto, subjuntivo, presente u otro). Van en el orden en que aparecen. «frase_corregida» es su mensaje entero ya corregido.
 
 2. Le contestas («respuesta») como en un chat entre amigas, en español de España, natural y cercano: una reacción corta a lo que te ha contado y una sola pregunta sobre eso mismo que la invite a contar más. Como mucho dos frases, sin emojis. Nunca hables de sus errores ni de gramática en la respuesta: si se equivocó, usa tú la forma correcta con naturalidad.
 
-Contesta solo con un objeto JSON con «correcciones» (la lista), «frase_corregida» y «respuesta».`;
+Contesta solo con un objeto JSON con «correcciones» (la lista; cada una con «original», «corregido», «explicacion», «verbo» y «tiempo»), «frase_corregida» y «respuesta», en ese orden.`;
 
   const AI_TENSE = { indefinido: "pret", imperfecto: "imp", perfecto: "perf", pluscuamperfecto: "plusc", subjuntivo: "subj" };
+  // kept to plain strings: the simpler the schema, the fewer ways the API can trip on it
   const S_STR = { type: "STRING" };
   const SCHEMA = {
     type: "OBJECT",
@@ -212,21 +213,15 @@ Contesta solo con un objeto JSON con «correcciones» (la lista), «frase_correg
         type: "ARRAY",
         items: {
           type: "OBJECT",
-          properties: {
-            original: S_STR,
-            corregido: S_STR,
-            explicacion: S_STR,
-            verbo: S_STR,
-            tiempo: { type: "STRING", enum: [...Object.keys(AI_TENSE), "presente", "otro"] },
-          },
+          properties: { original: S_STR, corregido: S_STR, explicacion: S_STR, verbo: S_STR, tiempo: S_STR },
           required: ["original", "corregido", "explicacion"],
-          propertyOrdering: ["original", "corregido", "explicacion", "verbo", "tiempo"],
         },
       },
       frase_corregida: S_STR,
       respuesta: S_STR,
     },
     required: ["correcciones", "frase_corregida", "respuesta"],
+    // the reply comes last, so it is written knowing what was corrected
     propertyOrdering: ["correcciones", "frase_corregida", "respuesta"],
   };
 
@@ -266,41 +261,62 @@ Contesta solo con un objeto JSON con «correcciones» (la lista), «frase_correg
     const use = f && f.kind !== "accent" ? echoForm(f) : null;
     const tense = plan.tense === "subj" ? "imp" : plan.tense;
     const messages = geminiMessages(an, use, tense, plan);
+    const other = MODELS.find((m) => m.api !== llm.id);
+    const attempts = [
+      { engine: llm.engine, schema: true, temperature: 0.5 },
+      // a server error is mostly Google being busy, now and then the schema:
+      // a moment later, ask again more plainly
+      { engine: llm.engine, schema: false, temperature: 0.3, wait: 1200 },
+      // then the other Flash model, with capacity and a free quota of its own
+      { engine: Gemini.engine(other.api, Gemini.getKey()), schema: false, temperature: 0.3, other: true },
+    ];
     let fail = "";
-    // one retry, cooler, before giving the turn to the guided tutor
-    for (const temperature of [0.5, 0.2]) {
-      const engine = llm.engine;
-      const timer = setTimeout(() => { try { engine.interruptGenerate(); } catch {} }, 30000);
+    let err = null;
+    for (let i = 0; i < attempts.length; i++) {
+      const a = attempts[i];
+      if (a.wait) await new Promise((r) => setTimeout(r, a.wait));
+      const timer = setTimeout(() => { try { a.engine.interruptGenerate(); } catch {} }, 30000);
       try {
-        const res = await engine.chat.completions.create({ messages, temperature, response_format: { type: "json_schema", schema: SCHEMA } });
+        const res = await a.engine.chat.completions.create({
+          messages,
+          temperature: a.temperature,
+          response_format: a.schema ? { type: "json_schema", schema: SCHEMA } : { type: "json_object" },
+        });
         const choice = res.choices[0];
         let out = null;
         try { out = JSON.parse(choice.message.content); } catch {}
         const reply = out && cleanReply(out.respuesta, plan);
-        if (reply) {
-          const fx = (Array.isArray(out.correcciones) ? out.correcciones : []).map((x) => ({
-            o: String(x.original || ""), c: String(x.corregido || ""), why: String(x.explicacion || ""),
-            v: String(x.verbo || "").toLowerCase().trim(), t: AI_TENSE[x.tiempo] || "",
-          }));
-          return { reply, ai: { fx, full: String(out.frase_corregida || "") } };
-        }
+        if (reply) return { reply, ai: readCorrections(out) };
+        err = null;
         fail = choice.finish_reason && choice.finish_reason !== "STOP" ? `Su respuesta se cortó (${choice.finish_reason}).` : "Su respuesta no se podía usar.";
         console.warn("pasado: unusable Gemini answer", choice);
       } catch (e) {
         console.warn("pasado: Gemini error", e);
         if (e && e.name === "AbortError") return { fail: "Ha tardado demasiado en contestar." };
+        err = e;
         fail = describeError(e);
-        // a bad key or a spent quota won't fix itself: say so instead of retrying every turn
-        if (e && e.gemini && e.status < 500) {
-          Object.assign(llm, { state: "error", engine: null, error: fail });
-          renderStatus();
-        }
-        return { fail };
+        if (!e || !e.gemini) return { fail }; // no connection: nothing else will get through either
+        if (e.status === 429 && !a.other) { i = attempts.length - 2; continue; } // its quota is spent: straight to the other model
+        if (e.status < 500) break;
       } finally {
         clearTimeout(timer);
       }
     }
+    // a bad key or a spent quota won't fix itself: say so above the chat too
+    if (err && err.gemini && err.status < 500) {
+      Object.assign(llm, { state: "error", engine: null, error: fail });
+      renderStatus();
+    }
     return { fail };
+  }
+
+  const plain = (x) => Analyzer.strip(String(x || "").toLowerCase()).trim();
+  function readCorrections(out) {
+    const fx = (Array.isArray(out.correcciones) ? out.correcciones : []).map((x) => ({
+      o: String(x.original || ""), c: String(x.corregido || ""), why: String(x.explicacion || ""),
+      v: String(x.verbo || "").toLowerCase().trim(), t: AI_TENSE[plain(x.tiempo)] || "",
+    }));
+    return { fx, full: String(out.frase_corregida || "") };
   }
 
   /* Gemini's corrections, placed in her text. Each one is looked for after the

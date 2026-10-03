@@ -63,8 +63,11 @@ const Gemini = (() => {
         ...(noThinking ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
       },
     };
-    const schema = opts.response_format && opts.response_format.schema;
-    if (schema) Object.assign(body.generationConfig, { responseMimeType: "application/json" }, useSchema ? { responseSchema: schema } : {});
+    // {schema}: JSON in that shape; without one, just JSON, shaped by the prompt
+    const fmt = opts.response_format;
+    const schema = fmt && fmt.schema;
+    if (fmt) body.generationConfig.responseMimeType = "application/json";
+    if (schema && useSchema) body.generationConfig.responseSchema = schema;
     if (system) body.systemInstruction = { parts: [{ text: system }] };
     const url = API + encodeURIComponent(model) + ":generateContent";
     const res = await fetch(url, {
@@ -125,7 +128,8 @@ const Gemini = (() => {
     if (e.status === 403) return "Esa clave no tiene permiso para usar Gemini. Crea otra en AI Studio.";
     if (e.status === 404) return "Google ya no ofrece ese modelo de Gemini. Elige otro en ajustes.";
     if (e.status === 429) return "Se ha agotado por ahora el uso gratuito de Gemini. Prueba más tarde, o cambia a Flash-Lite en ajustes.";
-    if (e.status >= 500) return "Gemini no responde ahora mismo. Vuelve a intentarlo en un rato.";
+    // Google's own words help tell a busy model from a request it can't handle
+    if (e.status >= 500) return `Los servidores de Google han fallado (error ${e.status}${msg ? ": " + msg.slice(0, 100) : ""}). Suele ser saturación pasajera.`;
     return "Gemini no ha podido contestar (" + msg.slice(0, 120) + ").";
   }
 
